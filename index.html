@@ -992,7 +992,7 @@ function renderMuridDashboard() {
           <div style="font-weight:600;font-size:.92rem;">${p.nama}</div>
           <div style="color:var(--muted);font-size:.78rem;">${statusText}</div>
         </div>
-        ${canStart?`<button class="btn btn-success btn-sm" onclick="startUjianByPaket('${p.id}')">Mulai</button>`:''}
+        ${canStart?`<button class="btn btn-success btn-sm" onclick="openKodeModalForPaket('${p.id}')">Mulai</button>`:''}
       </div>`;
     }).join('');
   }
@@ -1103,9 +1103,38 @@ function startUjianFromTab() {
   launchExam(paket);
 }
 
-function startUjianByPaket(paketId) {
-  const paket = DB.getArr('pakets').find(p=>p.id===paketId);
-  if(!paket) return;
+// Membuka modal kode ujian, ditargetkan ke satu paket spesifik (dipanggil dari tombol "Mulai")
+let pendingPaketId = null;
+function openKodeModalForPaket(paketId) {
+  pendingPaketId = paketId;
+  document.getElementById('kode-alert').innerHTML = '';
+  document.getElementById('kode-ujian-input').value = '';
+  openModal('modal-kode-ujian');
+  setTimeout(()=>document.getElementById('kode-ujian-input').focus(), 50);
+}
+
+function doMasukUjian() {
+  const kode = document.getElementById('kode-ujian-input').value.trim().toUpperCase();
+  const alertEl = document.getElementById('kode-alert');
+  alertEl.innerHTML = '';
+  if(!kode) { alertEl.innerHTML = '<div class="alert alert-danger">Masukkan kode ujian</div>'; return; }
+
+  const paket = DB.getArr('pakets').find(p=>p.id===pendingPaketId);
+  if(!paket) { alertEl.innerHTML = '<div class="alert alert-danger">Paket tidak ditemukan</div>'; return; }
+  if(kode !== paket.kode) { alertEl.innerHTML = '<div class="alert alert-danger">Kode ujian salah</div>'; return; }
+  if(!paket.published) { alertEl.innerHTML = '<div class="alert alert-warn">Paket belum dipublish</div>'; return; }
+
+  const now = Date.now();
+  const start = new Date(paket.mulai).getTime();
+  const end = new Date(paket.selesai).getTime();
+  if(now < start) { alertEl.innerHTML = `<div class="alert alert-warn">Ujian belum bisa diakses. Mulai: ${fmtDate(paket.mulai)}</div>`; return; }
+  if(now > end) { alertEl.innerHTML = '<div class="alert alert-danger">Ujian sudah berakhir</div>'; return; }
+
+  const done = DB.getArr('results').find(r=>r.paketId===paket.id && r.nama===currentUser.nama);
+  if(done) { alertEl.innerHTML = '<div class="alert alert-warn">Anda sudah mengerjakan ujian ini</div>'; return; }
+
+  closeModals();
+  pendingPaketId = null;
   launchExam(paket);
 }
 
@@ -1360,3 +1389,4 @@ document.addEventListener('DOMContentLoaded', ()=>{
 </script>
 </body>
 </html>
+
