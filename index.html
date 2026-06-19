@@ -6,6 +6,7 @@
 <title>CBT Ujian Online</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root {
     --primary: #1e40af;
@@ -525,13 +526,154 @@
 
 <script>
 // ============================================================
-// DATA STORE (localStorage)
+// DATA STORE (Supabase)
 // ============================================================
+const SUPABASE_URL = 'https://lunhzeagzkpywsrodypf.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx1bmh6ZWFnemtweXdzcm9keXBmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4MzY1NjgsImV4cCI6MjA5NzQxMjU2OH0.Z_UTP1moJEvaaUuZQfEKBSFnO-OS8PNqQBKLfUlY3e8'; // <-- isi dari Settings > API di dashboard Supabase
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+const OPT_LETTERS = ['A','B','C','D','E'];
+function letterToIndex(letter) { const i = OPT_LETTERS.indexOf(String(letter||'A').toUpperCase()); return i<0?0:i; }
+function indexToLetter(idx) { return OPT_LETTERS[idx] ?? 'A'; }
+
+// DB menyimpan cache lokal supaya kode rendering yang sudah ada (sync) tetap jalan.
+// Sebelum menampilkan data penting, panggil DB.refreshPakets()/refreshUsers()/refreshResults()
+// supaya cache diperbarui dari Supabase (jadi data terbaru dari perangkat lain ikut muncul).
+//
+// Catatan mapping nama kolom (kode internal app <-> kolom tabel Supabase):
+//   murid:      nama -> student_name, pass -> password
+//   paket:      nama -> title, kode -> package_code, mulai -> start_time, selesai -> end_time
+//   pertanyaan: teks -> question_text, opsi[0..4] -> option_a..option_e, kunci(0-4) -> answer_key(A-E)
+//   hasil:      studentId -> student_id, paketId -> package_id, nilai -> score
 const DB = {
-  get: (k) => { try { return JSON.parse(localStorage.getItem('cbt_'+k)) || null; } catch { return null; } },
-  set: (k, v) => localStorage.setItem('cbt_'+k, JSON.stringify(v)),
-  getArr: (k) => DB.get(k) || [],
-  push: (k, v) => { const a = DB.getArr(k); a.push(v); DB.set(k, a); },
+  cache: { pakets: [], users: [], results: [] },
+
+  getArr(k) { return this.cache[k] || []; },
+
+  async refreshPakets() {
+    const { data: pakets, error: e1 } = await sb.from('paket').select('*');
+    if (e1) { console.error('refreshPakets:', e1); return; }
+    const { data: soalRows, error: e2 } = await sb.from('pertanyaan').select('*').order('urutan', { ascending: true });
+    if (e2) { console.error('refreshPakets soal:', e2); }
+    this.cache.pakets = (pakets || []).map(p => ({
+      id: p.id,
+      nama: p.title,
+      durasi: p.durasi,
+      mulai: p.start_time,
+      selesai: p.end_time,
+      published: p.published,
+      kode: p.package_code || '',
+      soal: (soalRows || []).filter(s => s.package_id === p.id).map(s => ({
+        teks: s.question_text,
+        opsi: [s.option_a, s.option_b, s.option_c, s.option_d, s.option_e],
+        kunci: letterToIndex(s.answer_key)
+      }))
+    }));
+  },
+
+  async refreshUsers() {
+    const { data, error } = await sb.from('murid').select('*');
+    if (error) { console.error('refreshUsers:', error); return; }
+    this.cache.users = (data || []).map(u => ({ id: u.id, nama: u.student_name, pass: u.password }));
+  },
+
+  async refreshResults() {
+    await this.refreshUsers(); // perlu data murid terbaru supaya nama bisa di-lookup dengan benar
+    const { data, error } = await sb.from('hasil').select('*');
+    if (error) { console.error('refreshResults:', error); return; }
+    this.cache.results = (data || []).map(r => {
+      const student = this.cache.users.find(u => u.id === r.student_id);
+      return {
+        paketId: r.package_id,
+        studentId: r.student_id,
+        nama: student ? student.nama : '(murid)',
+        nilai: r.score,
+        correct: r.correct,
+        total: r.total,
+        answers: r.answers || {},
+        tanggal: r.submitted_at
+      };
+    });
+  },
+
+  async refreshAll() {
+    await Promise.all([this.refreshPakets(), this.refreshResults()]); // refreshResults sudah include refreshUsers
+  },
+
+  // --- Tulis data ke Supabase ---
+  async insertUser(nama, pass) {
+    const { data, error } = await sb.from('murid').insert([{ student_name: nama, password: pass }]).select().single();
+    if (error) throw error;
+    return data.id;
+  },
+
+  // Simpan paket (insert baru jika belum punya id, atau update jika sudah ada).
+  // Mengembalikan id paket (penting untuk paket baru, karena id digenerate oleh Supabase).
+  async savePaketToDB(paket) {
+    const payload = {
+      title: paket.nama,
+      package_code: paket.kode || null,
+      start_time: paket.mulai || null,
+      end_time: paket.selesai || null,
+      durasi: paket.durasi,
+      published: paket.published
+    };
+    let paketId = paket.id;
+    if (paketId) {
+      const { error } = await sb.from('paket').update(payload).eq('id', paketId);
+      if (error) throw error;
+    } else {
+      const { data, error } = await sb.from('paket').insert([payload]).select().single();
+      if (error) throw error;
+      paketId = data.id;
+    }
+    // ganti semua soal lama dengan yang baru
+    const { error: eDel } = await sb.from('pertanyaan').delete().eq('package_id', paketId);
+    if (eDel) throw eDel;
+    const rows = paket.soal.map((q, i) => ({
+      package_id: paketId,
+      urutan: i,
+      question_text: q.teks,
+      option_a: q.opsi[0] || '',
+      option_b: q.opsi[1] || '',
+      option_c: q.opsi[2] || '',
+      option_d: q.opsi[3] || '',
+      option_e: q.opsi[4] || '',
+      answer_key: indexToLetter(q.kunci)
+    }));
+    if (rows.length) {
+      const { error: eIns } = await sb.from('pertanyaan').insert(rows);
+      if (eIns) throw eIns;
+    }
+    return paketId;
+  },
+
+  async deletePaketFromDB(id) {
+    const { error } = await sb.from('paket').delete().eq('id', id); // pertanyaan & hasil ikut terhapus (cascade)
+    if (error) throw error;
+  },
+
+  async updatePaketFields(id, fields) {
+    const dbFields = {};
+    if ('published' in fields) dbFields.published = fields.published;
+    if ('kode' in fields) dbFields.package_code = fields.kode;
+    const { error } = await sb.from('paket').update(dbFields).eq('id', id);
+    if (error) throw error;
+  },
+
+  async insertResult(result) {
+    const { error } = await sb.from('hasil').insert([{
+      package_id: result.paketId,
+      student_id: result.studentId,
+      score: result.nilai,
+      correct: result.correct,
+      total: result.total,
+      answers: result.answers,
+      submitted_at: result.tanggal
+    }]);
+    if (error) throw error;
+  }
 };
 
 // ============================================================
@@ -566,40 +708,49 @@ function closeModals() {
 function switchToRegister() { openModal('modal-murid-register'); }
 function switchToLogin() { openModal('modal-murid-login'); }
 
-function doGuruLogin() {
+async function doGuruLogin() {
   const code = document.getElementById('guru-code-input').value;
   if(code === GURU_CODE) {
     closeModals();
     currentRole = 'guru';
-    showGuruPanel();
+    await showGuruPanel();
   } else {
     document.getElementById('guru-login-alert').innerHTML = '<div class="alert alert-danger">⚠ Kode salah!</div>';
   }
 }
 
-function doMuridLogin() {
+async function doMuridLogin() {
   const nama = document.getElementById('murid-login-name').value.trim();
   const pass = document.getElementById('murid-login-pass').value;
   if(!nama || !pass) { document.getElementById('murid-login-alert').innerHTML='<div class="alert alert-danger">Nama dan password wajib diisi</div>'; return; }
+  document.getElementById('murid-login-alert').innerHTML = '<div class="alert">⏳ Memeriksa akun...</div>';
+  await DB.refreshUsers();
   const users = DB.getArr('users');
   const user = users.find(u => u.nama.toLowerCase()===nama.toLowerCase() && u.pass===pass);
   if(!user) { document.getElementById('murid-login-alert').innerHTML='<div class="alert alert-danger">Nama atau password salah, atau akun belum terdaftar</div>'; return; }
   currentUser = user;
   currentRole = 'murid';
   closeModals();
-  showMuridPanel();
+  await showMuridPanel();
 }
 
-function doRegister() {
+async function doRegister() {
   const nama = document.getElementById('reg-name').value.trim();
   const pass = document.getElementById('reg-pass').value;
   const pass2 = document.getElementById('reg-pass2').value;
   if(!nama || !pass) { document.getElementById('murid-reg-alert').innerHTML='<div class="alert alert-danger">Semua field wajib diisi</div>'; return; }
   if(pass !== pass2) { document.getElementById('murid-reg-alert').innerHTML='<div class="alert alert-danger">Password tidak cocok</div>'; return; }
+  document.getElementById('murid-reg-alert').innerHTML = '<div class="alert">⏳ Memproses...</div>';
+  await DB.refreshUsers();
   const users = DB.getArr('users');
   if(users.find(u=>u.nama.toLowerCase()===nama.toLowerCase())) { document.getElementById('murid-reg-alert').innerHTML='<div class="alert alert-danger">Nama sudah terdaftar</div>'; return; }
-  users.push({nama, pass});
-  DB.set('users', users);
+  try {
+    await DB.insertUser(nama, pass);
+  } catch (err) {
+    console.error(err);
+    document.getElementById('murid-reg-alert').innerHTML = '<div class="alert alert-danger">Gagal membuat akun, coba lagi</div>';
+    return;
+  }
   document.getElementById('murid-reg-alert').innerHTML='<div class="alert alert-success">✅ Akun berhasil dibuat! Silakan login.</div>';
   setTimeout(switchToLogin, 1500);
 }
@@ -618,25 +769,29 @@ function hideAll() {
   ['landing','guru-panel','murid-panel','exam-view','hasil-view'].forEach(id=>document.getElementById(id).classList.add('hidden'));
 }
 
-function showGuruPanel() {
+async function showGuruPanel() {
   hideAll();
   document.getElementById('guru-panel').classList.remove('hidden');
+  await DB.refreshPakets();
+  await DB.refreshResults();
   renderGuruDashboard();
   populateSelectPakets('review-paket-select');
   populateSelectPakets('rekap-paket-select');
 }
 
-function showMuridPanel() {
+async function showMuridPanel() {
   hideAll();
   document.getElementById('murid-panel').classList.remove('hidden');
   document.getElementById('murid-topbar-name').textContent = currentUser.nama;
+  await DB.refreshPakets();
+  await DB.refreshResults();
   switchMuridTab('dashboard');
 }
 
 // ============================================================
 // GURU TABS
 // ============================================================
-function switchGuruTab(tab) {
+async function switchGuruTab(tab) {
   ['dashboard','buat','review','rekap'].forEach(t=>{
     document.getElementById('guru-tab-'+t).classList.toggle('hidden', t!==tab);
   });
@@ -644,10 +799,10 @@ function switchGuruTab(tab) {
     const names=['dashboard','buat','review','rekap'];
     el.classList.toggle('active', names[i]===tab);
   });
-  if(tab==='dashboard') renderGuruDashboard();
+  if(tab==='dashboard') { await DB.refreshPakets(); await DB.refreshResults(); renderGuruDashboard(); }
   if(tab==='buat' && !editingPaketId) initQuestionEditor([]);
-  if(tab==='review') { populateSelectPakets('review-paket-select'); }
-  if(tab==='rekap') { populateSelectPakets('rekap-paket-select'); }
+  if(tab==='review') { await DB.refreshPakets(); await DB.refreshResults(); populateSelectPakets('review-paket-select'); loadReview(); }
+  if(tab==='rekap') { await DB.refreshPakets(); await DB.refreshResults(); populateSelectPakets('rekap-paket-select'); loadRekap(); }
 }
 
 // ============================================================
@@ -683,10 +838,17 @@ function renderGuruDashboard() {
   }).join('');
 }
 
-function deletePaket(id) {
+async function deletePaket(id) {
   if(!confirm('Hapus paket ini?')) return;
-  const pakets = DB.getArr('pakets').filter(p=>p.id!==id);
-  DB.set('pakets', pakets);
+  try {
+    await DB.deletePaketFromDB(id);
+  } catch (err) {
+    console.error(err);
+    alert('Gagal menghapus paket, coba lagi.');
+    return;
+  }
+  await DB.refreshPakets();
+  await DB.refreshResults();
   renderGuruDashboard();
 }
 
@@ -708,15 +870,21 @@ function reviewPaketGuru(id) {
   loadReview();
 }
 
-function publishPaketById(id) {
+async function publishPaketById(id) {
   const pakets = DB.getArr('pakets');
   const idx = pakets.findIndex(p=>p.id===id);
   if(idx<0) return;
-  if(!pakets[idx].kode) pakets[idx].kode = generateKode();
-  pakets[idx].published = true;
-  DB.set('pakets', pakets);
+  const kode = pakets[idx].kode || generateKode();
+  try {
+    await DB.updatePaketFields(id, { published: true, kode });
+  } catch (err) {
+    console.error(err);
+    alert('Gagal mempublish paket, coba lagi.');
+    return;
+  }
+  await DB.refreshPakets();
   renderGuruDashboard();
-  alert('Paket dipublish!\nKode: '+pakets[idx].kode);
+  alert('Paket dipublish!\nKode: '+kode);
 }
 
 function generateKode() { return 'UJI-'+Math.random().toString(36).substr(2,6).toUpperCase(); }
@@ -769,7 +937,7 @@ function setKunci(qIdx, opsiIdx) {
 // ============================================================
 // SAVE / PUBLISH PAKET
 // ============================================================
-function savePaket() {
+async function savePaket() {
   syncEditorData();
   const nama = document.getElementById('paket-nama').value.trim();
   const durasi = parseInt(document.getElementById('paket-durasi').value);
@@ -777,40 +945,57 @@ function savePaket() {
   const selesai = document.getElementById('paket-selesai').value;
   if(!nama) { document.getElementById('buat-alert').innerHTML='<div class="alert alert-danger">Nama paket wajib diisi</div>'; return; }
   if(questions.some(q=>!q.teks.trim())) { document.getElementById('buat-alert').innerHTML='<div class="alert alert-danger">Ada soal yang belum diisi</div>'; return; }
+  document.getElementById('buat-alert').innerHTML='<div class="alert">⏳ Menyimpan...</div>';
   const pakets = DB.getArr('pakets');
+  let paketToSave;
   if(editingPaketId) {
-    const idx = pakets.findIndex(p=>p.id===editingPaketId);
-    if(idx>=0) { pakets[idx]={...pakets[idx],nama,durasi,mulai,selesai,soal:JSON.parse(JSON.stringify(questions))}; }
+    const existing = pakets.find(p=>p.id===editingPaketId);
+    paketToSave = {...existing, nama, durasi, mulai, selesai, soal: JSON.parse(JSON.stringify(questions))};
   } else {
-    pakets.push({id:uuid(),nama,durasi,mulai,selesai,soal:JSON.parse(JSON.stringify(questions)),published:false,kode:''});
+    paketToSave = { id: null, nama, durasi, mulai, selesai, soal: JSON.parse(JSON.stringify(questions)), published: false, kode: '' };
   }
-  DB.set('pakets', pakets);
+  try {
+    const savedId = await DB.savePaketToDB(paketToSave);
+    editingPaketId = savedId;
+  } catch (err) {
+    console.error(err);
+    document.getElementById('buat-alert').innerHTML='<div class="alert alert-danger">Gagal menyimpan paket, coba lagi.</div>';
+    return;
+  }
+  await DB.refreshPakets();
   document.getElementById('buat-alert').innerHTML='<div class="alert alert-success">✅ Paket disimpan!</div>';
   populateSelectPakets('review-paket-select');
   populateSelectPakets('rekap-paket-select');
 }
 
-function publishPaket() {
+async function publishPaket() {
   syncEditorData();
   const nama = document.getElementById('paket-nama').value.trim();
   const durasi = parseInt(document.getElementById('paket-durasi').value);
   const mulai = document.getElementById('paket-mulai').value;
   const selesai = document.getElementById('paket-selesai').value;
   if(!nama || !mulai || !selesai) { document.getElementById('buat-alert').innerHTML='<div class="alert alert-danger">Nama, tanggal mulai, dan selesai wajib diisi</div>'; return; }
-  const kode = generateKode();
+  document.getElementById('buat-alert').innerHTML='<div class="alert">⏳ Mempublish...</div>';
   const pakets = DB.getArr('pakets');
+  let paketToSave;
   if(editingPaketId) {
-    const idx = pakets.findIndex(p=>p.id===editingPaketId);
-    if(idx>=0) { pakets[idx]={...pakets[idx],nama,durasi,mulai,selesai,soal:JSON.parse(JSON.stringify(questions)),published:true,kode:pakets[idx].kode||kode}; }
+    const existing = pakets.find(p=>p.id===editingPaketId);
+    const kode = existing?.kode || generateKode();
+    paketToSave = {...existing, nama, durasi, mulai, selesai, soal: JSON.parse(JSON.stringify(questions)), published: true, kode};
   } else {
-    const newId=uuid();
-    pakets.push({id:newId,nama,durasi,mulai,selesai,soal:JSON.parse(JSON.stringify(questions)),published:true,kode});
-    editingPaketId = newId;
+    paketToSave = { id: null, nama, durasi, mulai, selesai, soal: JSON.parse(JSON.stringify(questions)), published: true, kode: generateKode() };
   }
-  DB.set('pakets', pakets);
-  const finalKode = pakets.find(p=>p.id===editingPaketId)?.kode || kode;
+  try {
+    const savedId = await DB.savePaketToDB(paketToSave);
+    editingPaketId = savedId;
+  } catch (err) {
+    console.error(err);
+    document.getElementById('buat-alert').innerHTML='<div class="alert alert-danger">Gagal mempublish paket, coba lagi.</div>';
+    return;
+  }
+  await DB.refreshPakets();
   document.getElementById('kode-result').classList.remove('hidden');
-  document.getElementById('kode-result').innerHTML = `✅ Paket dipublish! Kode ujian: <strong style="font-size:1.2rem;">${finalKode}</strong> — Bagikan kode ini ke siswa.`;
+  document.getElementById('kode-result').innerHTML = `✅ Paket dipublish! Kode ujian: <strong style="font-size:1.2rem;">${paketToSave.kode}</strong> — Bagikan kode ini ke siswa.`;
   populateSelectPakets('review-paket-select');
   populateSelectPakets('rekap-paket-select');
   renderGuruDashboard();
@@ -952,7 +1137,7 @@ function exportRekap() {
 // ============================================================
 // MURID TABS
 // ============================================================
-function switchMuridTab(tab) {
+async function switchMuridTab(tab) {
   ['dashboard','ujian','riwayat'].forEach(t=>{
     document.getElementById('murid-tab-'+t).classList.toggle('hidden', t!==tab);
   });
@@ -960,8 +1145,8 @@ function switchMuridTab(tab) {
     const names=['dashboard','ujian','riwayat'];
     el.classList.toggle('active', names[i]===tab);
   });
-  if(tab==='dashboard') renderMuridDashboard();
-  if(tab==='riwayat') renderRiwayat();
+  if(tab==='dashboard') { await DB.refreshPakets(); await DB.refreshResults(); renderMuridDashboard(); }
+  if(tab==='riwayat') { await DB.refreshPakets(); await DB.refreshResults(); renderRiwayat(); }
 }
 
 // ============================================================
@@ -1087,9 +1272,11 @@ function renderRiwayat() {
 // ============================================================
 // START UJIAN
 // ============================================================
-function startUjianFromTab() {
+async function startUjianFromTab() {
   const kode = document.getElementById('kode-ujian-murid').value.trim().toUpperCase();
-  document.getElementById('ujian-alert').innerHTML='';
+  document.getElementById('ujian-alert').innerHTML='<div class="alert">⏳ Memeriksa kode...</div>';
+  await DB.refreshPakets();
+  await DB.refreshResults();
   const paket = DB.getArr('pakets').find(p=>p.kode===kode);
   if(!paket) { document.getElementById('ujian-alert').innerHTML='<div class="alert alert-danger">Kode tidak ditemukan</div>'; return; }
   if(!paket.published) { document.getElementById('ujian-alert').innerHTML='<div class="alert alert-warn">Paket belum dipublish</div>'; return; }
@@ -1100,6 +1287,7 @@ function startUjianFromTab() {
   if(now > end) { document.getElementById('ujian-alert').innerHTML='<div class="alert alert-danger">Ujian sudah berakhir</div>'; return; }
   const done = DB.getArr('results').find(r=>r.paketId===paket.id && r.nama===currentUser.nama);
   if(done) { document.getElementById('ujian-alert').innerHTML='<div class="alert alert-warn">Anda sudah mengerjakan ujian ini</div>'; return; }
+  document.getElementById('ujian-alert').innerHTML='';
   launchExam(paket);
 }
 
@@ -1113,12 +1301,14 @@ function openKodeModalForPaket(paketId) {
   setTimeout(()=>document.getElementById('kode-ujian-input').focus(), 50);
 }
 
-function doMasukUjian() {
+async function doMasukUjian() {
   const kode = document.getElementById('kode-ujian-input').value.trim().toUpperCase();
   const alertEl = document.getElementById('kode-alert');
-  alertEl.innerHTML = '';
+  alertEl.innerHTML = '<div class="alert">⏳ Memeriksa...</div>';
   if(!kode) { alertEl.innerHTML = '<div class="alert alert-danger">Masukkan kode ujian</div>'; return; }
 
+  await DB.refreshPakets();
+  await DB.refreshResults();
   const paket = DB.getArr('pakets').find(p=>p.id===pendingPaketId);
   if(!paket) { alertEl.innerHTML = '<div class="alert alert-danger">Paket tidak ditemukan</div>'; return; }
   if(kode !== paket.kode) { alertEl.innerHTML = '<div class="alert alert-danger">Kode ujian salah</div>'; return; }
@@ -1267,20 +1457,28 @@ function confirmSubmit() {
   submitExam(paket);
 }
 
-function submitExam(paket) {
+async function submitExam(paket) {
   stopExamTimer();
   let correct = 0;
   paket.soal.forEach((q,i)=>{ if(examState.answers[i]===q.kunci) correct++; });
   const nilai = Math.round((correct/paket.soal.length)*100);
   const result = {
     paketId: paket.id,
+    studentId: currentUser.id,
     nama: currentUser.nama,
     nilai, correct,
     total: paket.soal.length,
     answers: {...examState.answers},
     tanggal: new Date().toISOString()
   };
-  DB.push('results', result);
+  try {
+    await DB.insertResult(result);
+  } catch (err) {
+    console.error(err);
+    alert('Gagal menyimpan hasil ujian. Periksa koneksi internet kamu lalu coba submit lagi.');
+    return;
+  }
+  await DB.refreshResults();
   showHasil(result, paket);
 }
 
@@ -1389,4 +1587,3 @@ document.addEventListener('DOMContentLoaded', ()=>{
 </script>
 </body>
 </html>
-
