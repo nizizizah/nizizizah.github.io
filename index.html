@@ -1,0 +1,1362 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CBT Ujian Online</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  :root {
+    --primary: #1e40af;
+    --primary-light: #3b82f6;
+    --primary-dark: #1e3a8a;
+    --accent: #f59e0b;
+    --accent2: #10b981;
+    --danger: #ef4444;
+    --warn: #f59e0b;
+    --bg: #f0f4ff;
+    --card: #ffffff;
+    --text: #1e293b;
+    --muted: #64748b;
+    --border: #e2e8f0;
+    --answered: #22c55e;
+    --unanswered: #e2e8f0;
+    --doubt: #f59e0b;
+    --correct: #22c55e;
+    --wrong: #ef4444;
+    --radius: 12px;
+    --shadow: 0 4px 24px rgba(30,64,175,0.10);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+  .hidden { display: none !important; }
+
+  /* ===== LANDING ===== */
+  #landing { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px; padding: 32px; }
+  .landing-logo { font-size: 2.8rem; font-weight: 800; color: var(--primary); letter-spacing: -1px; }
+  .landing-logo span { color: var(--accent); }
+  .landing-sub { color: var(--muted); font-size: 1.1rem; text-align: center; }
+  .landing-cards { display: flex; gap: 24px; flex-wrap: wrap; justify-content: center; }
+  .landing-card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 40px 48px; cursor: pointer; transition: transform .15s, box-shadow .15s; display: flex; flex-direction: column; align-items: center; gap: 16px; border: 2px solid transparent; min-width: 220px; }
+  .landing-card:hover { transform: translateY(-4px); box-shadow: 0 8px 32px rgba(30,64,175,.18); border-color: var(--primary-light); }
+  .landing-card .lc-icon { width: 64px; height: 64px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2rem; border: 2.5px solid var(--border); }
+  .landing-card.guru .lc-icon { background: #eff6ff; border-color: var(--primary-light); }
+  .landing-card.murid .lc-icon { background: #f0fdf4; border-color: var(--accent2); }
+  .landing-card h3 { font-size: 1.25rem; font-weight: 700; }
+  .landing-card p { color: var(--muted); font-size: .92rem; text-align: center; }
+
+  /* ===== MODAL ===== */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 1000; display: flex; align-items: center; justify-content: center; }
+  .modal { background: var(--card); border-radius: var(--radius); padding: 40px; max-width: 420px; width: 100%; box-shadow: 0 24px 64px rgba(0,0,0,.2); }
+  .modal h2 { font-size: 1.4rem; font-weight: 700; margin-bottom: 8px; }
+  .modal p { color: var(--muted); margin-bottom: 24px; font-size: .95rem; }
+
+  /* ===== FORMS ===== */
+  .form-group { margin-bottom: 18px; }
+  .form-group label { display: block; font-weight: 600; margin-bottom: 6px; font-size: .92rem; }
+  .form-group input, .form-group select, .form-group textarea {
+    width: 100%; padding: 11px 14px; border: 1.5px solid var(--border); border-radius: 8px;
+    font-size: .97rem; color: var(--text); background: #f8fafc; transition: border-color .15s;
+  }
+  .form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: none; border-color: var(--primary-light); background: #fff; }
+  .btn { padding: 11px 24px; border-radius: 8px; border: none; cursor: pointer; font-weight: 600; font-size: .97rem; transition: background .15s, transform .1s; }
+  .btn:active { transform: scale(.97); }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-primary:hover { background: var(--primary-dark); }
+  .btn-accent { background: var(--accent); color: #fff; }
+  .btn-accent:hover { background: #d97706; }
+  .btn-success { background: var(--accent2); color: #fff; }
+  .btn-success:hover { background: #059669; }
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn-outline { background: transparent; border: 1.5px solid var(--border); color: var(--text); }
+  .btn-outline:hover { background: var(--bg); }
+  .btn-sm { padding: 7px 14px; font-size: .85rem; }
+  .btn-full { width: 100%; }
+  .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+
+  /* ===== LAYOUT COMMON ===== */
+  .app-layout { display: flex; flex-direction: column; min-height: 100vh; }
+  .topbar { background: var(--primary); color: #fff; padding: 0 28px; height: 60px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
+  .topbar-brand { font-weight: 800; font-size: 1.2rem; letter-spacing: -.5px; }
+  .topbar-brand span { color: var(--accent); }
+  .topbar-right { display: flex; align-items: center; gap: 12px; font-size: .92rem; }
+  .topbar-user { background: rgba(255,255,255,.15); padding: 5px 14px; border-radius: 20px; font-weight: 600; }
+  .topbar-logout { cursor: pointer; opacity: .8; }
+  .topbar-logout:hover { opacity: 1; }
+  .page-content { flex: 1; padding: 28px; max-width: 1300px; width: 100%; margin: 0 auto; }
+
+  /* ===== TABS ===== */
+  .tabs { display: flex; gap: 4px; background: var(--card); border-radius: 10px; padding: 4px; box-shadow: var(--shadow); margin-bottom: 24px; width: fit-content; }
+  .tab { padding: 9px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: .92rem; color: var(--muted); transition: all .15s; }
+  .tab.active { background: var(--primary); color: #fff; }
+
+  /* ===== CARD ===== */
+  .card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 24px; margin-bottom: 20px; }
+  .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+  .card-title { font-size: 1.15rem; font-weight: 700; }
+
+  /* ===== GURU DASHBOARD ===== */
+  .paket-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 18px; }
+  .paket-card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 22px; border-left: 5px solid var(--primary-light); }
+  .paket-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 10px; }
+  .paket-card-title { font-weight: 700; font-size: 1rem; }
+  .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 20px; font-size: .78rem; font-weight: 700; border: 1.5px solid; }
+  .badge-active { background: #f0fdf4; color: #166534; border-color: #86efac; }
+  .badge-draft { background: #fefce8; color: #854d0e; border-color: #fde047; }
+  .badge-published { background: #eff6ff; color: var(--primary-dark); border-color: #93c5fd; }
+  .badge-ended { background: #fef2f2; color: #991b1b; border-color: #fca5a5; }
+  .paket-meta { color: var(--muted); font-size: .84rem; margin-top: 4px; }
+  .paket-code { font-family: monospace; background: #eff6ff; color: var(--primary); padding: 3px 10px; border-radius: 6px; font-weight: 700; font-size: .92rem; display: inline-block; margin-top: 8px; border: 1px solid #bfdbfe; }
+  .paket-actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+
+  /* ===== BUAT PAKET ===== */
+  .question-editor { background: #f8fafc; border: 1.5px solid var(--border); border-radius: 10px; padding: 18px; margin-bottom: 16px; }
+  .q-num { font-weight: 700; color: var(--primary); margin-bottom: 12px; }
+  .option-row { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; }
+  .option-label { font-weight: 700; min-width: 22px; text-align: center; }
+  .option-row input { flex: 1; }
+  .correct-btn { padding: 6px 12px; border-radius: 6px; border: 1.5px solid var(--border); cursor: pointer; font-size: .82rem; font-weight: 600; background: var(--bg); transition: all .12s; }
+  .correct-btn.selected { background: var(--accent2); color: #fff; border-color: var(--accent2); }
+
+  /* ===== REVIEW SOAL GURU ===== */
+  .review-grid { display: grid; grid-template-columns: repeat(20, 25px); gap: 5px; }
+  .review-box { width: 25px; height: 25px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: .65rem; font-weight: 700; cursor: pointer; color: #fff; border: 1.5px solid rgba(0,0,0,.12); }
+  .review-box.green { background: var(--correct); }
+  .review-box.red { background: var(--wrong); }
+  .review-box.gray { background: #d1d5db; color: var(--text); }
+
+  /* ===== MURID DASHBOARD ===== */
+  .murid-paket-card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; display: flex; flex-direction: column; gap: 10px; border-left: 5px solid var(--accent2); }
+  .murid-paket-card.locked { border-left-color: #94a3b8; opacity: .75; }
+  .murid-paket-card.done { border-left-color: var(--primary-light); }
+  .score-circle { width: 70px; height: 70px; border-radius: 50%; border: 4px solid var(--primary-light); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.4rem; color: var(--primary); background: #eff6ff; flex-shrink: 0; }
+
+  /* mini chart */
+  .mini-chart-wrap { position: relative; }
+  canvas.mini-chart { max-height: 120px; }
+
+  /* ===== EXAM LAYOUT ===== */
+  #exam-view { display: flex; flex-direction: column; min-height: 100vh; }
+  .exam-topbar { background: var(--primary); color: #fff; padding: 0 24px; height: 56px; display: flex; align-items: center; justify-content: space-between; }
+  .exam-title { font-weight: 700; font-size: 1rem; }
+  .exam-timer { background: var(--accent); color: #1e1e1e; padding: 8px 22px; border-radius: 10px; font-size: 1.35rem; font-weight: 800; letter-spacing: 1px; font-family: monospace; border: 2px solid rgba(0,0,0,.15); }
+  .exam-body { display: flex; flex: 1; gap: 0; }
+  .exam-question-panel { flex: 1; min-width: 0; padding: 28px; overflow-y: auto; }
+  .exam-progress-panel { width: 280px; flex-shrink: 0; padding: 20px 16px; background: var(--card); border-left: 1.5px solid var(--border); display: flex; flex-direction: column; max-height: calc(100vh - 56px); position: sticky; top: 56px; }
+  .progress-panel-title { font-weight: 700; font-size: .95rem; margin-bottom: 14px; color: var(--primary); }
+  .progress-legend { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; font-size: .8rem; }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-dot { width: 14px; height: 14px; border-radius: 3px; border: 1.5px solid rgba(0,0,0,.12); flex-shrink: 0; }
+  .progress-grid { display: grid; grid-template-columns: repeat(5, 36px); gap: 5px; overflow-y: auto; flex: 1; padding-right: 4px; }
+  .prog-box { width: 36px; height: 36px; border-radius: 6px; border: 1.5px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: .78rem; font-weight: 700; cursor: pointer; transition: all .12s; color: var(--text); }
+  .prog-box.answered { background: var(--answered); color: #fff; border-color: #16a34a; }
+  .prog-box.doubt { background: var(--doubt); color: #fff; border-color: #d97706; }
+  .prog-box.current { box-shadow: 0 0 0 3px var(--primary-light); }
+
+  .question-card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 28px; }
+  .q-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+  .q-number { background: var(--primary); color: #fff; padding: 4px 16px; border-radius: 20px; font-weight: 700; font-size: .92rem; }
+  .q-text { font-size: 1.08rem; line-height: 1.7; margin-bottom: 24px; }
+  .options-list { display: flex; flex-direction: column; gap: 12px; }
+  .option-item { display: flex; align-items: center; gap: 12px; padding: 13px 18px; border-radius: 10px; border: 1.5px solid var(--border); cursor: pointer; transition: all .12s; }
+  .option-item:hover { border-color: var(--primary-light); background: #eff6ff; }
+  .option-item.selected { border-color: var(--primary); background: #eff6ff; }
+  .option-item input[type=radio] { width: 18px; height: 18px; accent-color: var(--primary); flex-shrink: 0; }
+  .option-key { font-weight: 700; color: var(--primary); min-width: 22px; }
+  .q-nav { display: flex; justify-content: space-between; align-items: center; margin-top: 24px; flex-wrap: wrap; gap: 10px; }
+  .btn-doubt { background: #fef9c3; color: #854d0e; border: 1.5px solid #fde047; }
+  .btn-doubt:hover { background: #fef08a; }
+  .btn-doubt.active { background: var(--doubt); color: #fff; border-color: #d97706; }
+
+  /* ===== HASIL ===== */
+  .result-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; flex-direction: column; padding: 32px; gap: 24px; }
+  .result-card { background: var(--card); border-radius: 20px; box-shadow: 0 8px 48px rgba(30,64,175,.15); padding: 48px 56px; max-width: 700px; width: 100%; text-align: center; }
+  .result-score { display: inline-flex; align-items: center; justify-content: center; width: 120px; height: 120px; border-radius: 50%; border: 5px solid var(--primary-light); background: #eff6ff; font-size: 2.8rem; font-weight: 900; color: var(--primary); margin-bottom: 16px; }
+  .result-name { font-size: 1.5rem; font-weight: 700; margin-bottom: 6px; }
+  .result-sub { color: var(--muted); margin-bottom: 24px; }
+  .result-review { text-align: left; margin-top: 24px; }
+  .result-review-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(34px, 1fr)); gap: 5px; margin-top: 12px; }
+  .rr-box { width: 34px; height: 34px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: .75rem; font-weight: 700; border: 1.5px solid rgba(0,0,0,.12); }
+  .rr-box.correct { background: var(--correct); color: #fff; }
+  .rr-box.wrong { background: var(--wrong); color: #fff; }
+
+  /* ===== MURID HISTORY ===== */
+  .history-table { width: 100%; border-collapse: collapse; font-size: .93rem; }
+  .history-table th { background: var(--bg); text-align: left; padding: 10px 14px; font-weight: 700; color: var(--muted); font-size: .82rem; text-transform: uppercase; letter-spacing: .5px; }
+  .history-table td { padding: 11px 14px; border-top: 1px solid var(--border); }
+
+  /* ===== ALERT ===== */
+  .alert { padding: 12px 18px; border-radius: 8px; margin-bottom: 14px; font-size: .93rem; display: flex; align-items: center; gap: 8px; }
+  .alert-danger { background: #fef2f2; color: #991b1b; border: 1px solid #fca5a5; }
+  .alert-success { background: #f0fdf4; color: #166534; border: 1px solid #86efac; }
+  .alert-warn { background: #fffbeb; color: #92400e; border: 1px solid #fde68a; }
+
+  /* ===== LINE CHART ===== */
+  .chart-wrap { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; }
+  .chart-title { font-weight: 700; font-size: .97rem; margin-bottom: 16px; }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+
+  /* ===== RESPONSIVE ===== */
+  @media (max-width: 768px) {
+    .exam-body { flex-direction: column; }
+    .exam-progress-panel { width: 100%; max-height: 240px; position: static; border-left: none; border-top: 1.5px solid var(--border); }
+    .progress-grid { grid-template-columns: repeat(8, 36px); }
+    .review-grid { grid-template-columns: repeat(10, 25px); }
+    .page-content { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== LANDING ===== -->
+<div id="landing">
+  <div class="landing-logo">CBT <span>Online</span></div>
+  <p class="landing-sub">Platform Ujian Berbasis Komputer — Mudah, Cepat, Terpercaya</p>
+  <div class="landing-cards">
+    <div class="landing-card guru" onclick="showGuruLogin()">
+      <div class="lc-icon">👨‍🏫</div>
+      <h3>Guru</h3>
+      <p>Kelola paket ujian, soal, dan lihat hasil peserta</p>
+    </div>
+    <div class="landing-card murid" onclick="showMuridLogin()">
+      <div class="lc-icon">👨‍🎓</div>
+      <h3>Siswa</h3>
+      <p>Ikuti ujian dan lihat hasil belajar Anda</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MODALS ===== -->
+<div id="modal-guru-login" class="modal-overlay hidden">
+  <div class="modal">
+    <h2>🔐 Masuk sebagai Guru</h2>
+    <p>Masukkan kode akses guru untuk melanjutkan</p>
+    <div id="guru-login-alert"></div>
+    <div class="form-group">
+      <label>Kode Akses Guru</label>
+      <input type="password" id="guru-code-input" placeholder="Masukkan kode..." onkeydown="if(event.key==='Enter')doGuruLogin()">
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary btn-full" onclick="doGuruLogin()">Masuk</button>
+      <button class="btn btn-outline" onclick="closeModals()">Batal</button>
+    </div>
+  </div>
+</div>
+
+<div id="modal-murid-login" class="modal-overlay hidden">
+  <div class="modal">
+    <h2>👨‍🎓 Masuk sebagai Siswa</h2>
+    <p>Login ke akun Anda atau daftar jika belum punya akun</p>
+    <div id="murid-login-alert"></div>
+    <div class="form-group">
+      <label>Nama</label>
+      <input type="text" id="murid-login-name" placeholder="Nama lengkap Anda">
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="password" id="murid-login-pass" placeholder="Password" onkeydown="if(event.key==='Enter')doMuridLogin()">
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-success btn-full" onclick="doMuridLogin()">Masuk</button>
+      <button class="btn btn-outline" onclick="switchToRegister()">Daftar Akun</button>
+      <button class="btn btn-outline btn-sm" onclick="closeModals()">Batal</button>
+    </div>
+  </div>
+</div>
+
+<div id="modal-murid-register" class="modal-overlay hidden">
+  <div class="modal">
+    <h2>📝 Daftar Akun Siswa</h2>
+    <p>Buat akun baru untuk mengikuti ujian</p>
+    <div id="murid-reg-alert"></div>
+    <div class="form-group">
+      <label>Nama Lengkap</label>
+      <input type="text" id="reg-name" placeholder="Nama lengkap">
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="password" id="reg-pass" placeholder="Buat password">
+    </div>
+    <div class="form-group">
+      <label>Konfirmasi Password</label>
+      <input type="password" id="reg-pass2" placeholder="Ulangi password">
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-success btn-full" onclick="doRegister()">Daftar</button>
+      <button class="btn btn-outline" onclick="switchToLogin()">Sudah punya akun</button>
+    </div>
+  </div>
+</div>
+
+<div id="modal-kode-ujian" class="modal-overlay hidden">
+  <div class="modal">
+    <h2>🔑 Masukkan Kode Ujian</h2>
+    <p>Minta kode ujian dari guru Anda</p>
+    <div id="kode-alert"></div>
+    <div class="form-group">
+      <label>Kode Ujian</label>
+      <input type="text" id="kode-ujian-input" placeholder="contoh: UJI-ABC123" oninput="this.value=this.value.toUpperCase()" onkeydown="if(event.key==='Enter')doMasukUjian()">
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary btn-full" onclick="doMasukUjian()">Mulai Ujian</button>
+      <button class="btn btn-outline" onclick="closeModals()">Batal</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== GURU PANEL ===== -->
+<div id="guru-panel" class="hidden app-layout">
+  <div class="topbar">
+    <div class="topbar-brand">CBT <span>Online</span></div>
+    <div class="topbar-right">
+      <span class="topbar-user">👨‍🏫 Guru</span>
+      <span class="topbar-logout" onclick="logout()">Keluar ✕</span>
+    </div>
+  </div>
+  <div class="page-content">
+    <div class="tabs">
+      <div class="tab active" onclick="switchGuruTab('dashboard')">Dashboard</div>
+      <div class="tab" onclick="switchGuruTab('buat')">Buat Paket</div>
+      <div class="tab" onclick="switchGuruTab('review')">Review Ujian</div>
+      <div class="tab" onclick="switchGuruTab('rekap')">Rekap Nilai</div>
+    </div>
+
+    <!-- DASHBOARD GURU -->
+    <div id="guru-tab-dashboard">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">📦 Paket Ujian</div>
+          <button class="btn btn-primary btn-sm" onclick="switchGuruTab('buat')">+ Buat Paket Baru</button>
+        </div>
+        <div class="paket-grid" id="guru-paket-grid"></div>
+        <p id="guru-paket-empty" class="hidden" style="color:var(--muted);text-align:center;padding:24px;">Belum ada paket ujian. Klik "Buat Paket Baru" untuk memulai.</p>
+      </div>
+    </div>
+
+    <!-- BUAT PAKET GURU -->
+    <div id="guru-tab-buat" class="hidden">
+      <div class="card">
+        <div class="card-title" style="margin-bottom:20px;">📝 Buat / Edit Paket Ujian</div>
+        <div id="buat-alert"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          <div class="form-group">
+            <label>Nama Paket Ujian</label>
+            <input type="text" id="paket-nama" placeholder="contoh: Ujian Matematika Kelas X">
+          </div>
+          <div class="form-group">
+            <label>Durasi Ujian (menit)</label>
+            <input type="number" id="paket-durasi" value="60" min="1">
+          </div>
+          <div class="form-group">
+            <label>Tanggal & Jam Mulai</label>
+            <input type="datetime-local" id="paket-mulai">
+          </div>
+          <div class="form-group">
+            <label>Tanggal & Jam Selesai</label>
+            <input type="datetime-local" id="paket-selesai">
+          </div>
+        </div>
+        <div class="card-header" style="margin-top:8px;">
+          <span style="font-weight:700;">Soal-Soal</span>
+          <div class="btn-row">
+            <button class="btn btn-outline btn-sm" onclick="addQuestion()">+ Tambah Soal</button>
+            <label class="btn btn-outline btn-sm" style="cursor:pointer;">📥 Import Excel <input type="file" accept=".xlsx,.xls" class="hidden" onchange="importExcel(event)"></label>
+            <a class="btn btn-outline btn-sm" onclick="downloadTemplate()">📤 Template Excel</a>
+          </div>
+        </div>
+        <div id="questions-editor"></div>
+        <div class="btn-row" style="margin-top:20px;">
+          <button class="btn btn-primary" onclick="savePaket()">💾 Simpan Paket</button>
+          <button class="btn btn-success" onclick="publishPaket()">🚀 Publish & Generate Kode</button>
+          <button class="btn btn-outline" onclick="clearPaketForm()">🗑 Hapus Form</button>
+        </div>
+        <div id="kode-result" class="hidden alert alert-success" style="margin-top:16px;"></div>
+      </div>
+    </div>
+
+    <!-- REVIEW UJIAN GURU -->
+    <div id="guru-tab-review" class="hidden">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">📊 Review Paket Ujian</div>
+          <select id="review-paket-select" onchange="loadReview()" class="form-group" style="margin:0;width:220px;">
+            <option value="">-- Pilih Paket --</option>
+          </select>
+        </div>
+        <div id="review-content">
+          <p style="color:var(--muted);text-align:center;padding:24px;">Pilih paket untuk melihat review soal.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- REKAP NILAI GURU -->
+    <div id="guru-tab-rekap" class="hidden">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">📋 Rekap Nilai</div>
+          <select id="rekap-paket-select" onchange="loadRekap()" class="form-group" style="margin:0;width:220px;">
+            <option value="">-- Pilih Paket --</option>
+          </select>
+        </div>
+        <div id="rekap-content">
+          <p style="color:var(--muted);text-align:center;padding:24px;">Pilih paket untuk melihat rekap nilai.</p>
+        </div>
+        <div class="btn-row" style="margin-top:12px;" id="rekap-export-btn" class="hidden">
+          <button class="btn btn-success btn-sm" onclick="exportRekap()">📊 Export Excel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MURID PANEL ===== -->
+<div id="murid-panel" class="hidden app-layout">
+  <div class="topbar">
+    <div class="topbar-brand">CBT <span>Online</span></div>
+    <div class="topbar-right">
+      <span class="topbar-user">👨‍🎓 <span id="murid-topbar-name"></span></span>
+      <span class="topbar-logout" onclick="logout()">Keluar ✕</span>
+    </div>
+  </div>
+  <div class="page-content">
+    <div class="tabs">
+      <div class="tab active" onclick="switchMuridTab('dashboard')">Dashboard</div>
+      <div class="tab" onclick="switchMuridTab('ujian')">Ikuti Ujian</div>
+      <div class="tab" onclick="switchMuridTab('riwayat')">Riwayat</div>
+    </div>
+
+    <!-- DASHBOARD MURID -->
+    <div id="murid-tab-dashboard">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;" class="responsive-2col">
+        <div class="chart-wrap">
+          <div class="chart-title">📈 Perkembangan Nilai</div>
+          <canvas id="nilai-chart" height="120"></canvas>
+        </div>
+        <div class="card" style="margin:0;">
+          <div class="card-title" style="margin-bottom:14px;">📦 Paket Ujian Tersedia</div>
+          <div id="murid-available-paket" style="display:flex;flex-direction:column;gap:10px;max-height:240px;overflow-y:auto;"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title" style="margin-bottom:16px;">🏆 Hasil Ujian Terakhir</div>
+        <div id="murid-hasil-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;"></div>
+        <p id="murid-hasil-empty" style="color:var(--muted);text-align:center;padding:16px;">Belum ada ujian yang dikerjakan.</p>
+      </div>
+    </div>
+
+    <!-- IKUTI UJIAN MURID -->
+    <div id="murid-tab-ujian" class="hidden">
+      <div class="card" style="max-width:500px;margin:0 auto;">
+        <div class="card-title" style="margin-bottom:16px;">🔑 Masukkan Kode Ujian</div>
+        <div id="ujian-alert"></div>
+        <div class="form-group">
+          <label>Kode Ujian</label>
+          <input type="text" id="kode-ujian-murid" placeholder="contoh: UJI-ABC123" oninput="this.value=this.value.toUpperCase()">
+        </div>
+        <button class="btn btn-primary" onclick="startUjianFromTab()">Mulai Ujian</button>
+      </div>
+    </div>
+
+    <!-- RIWAYAT MURID -->
+    <div id="murid-tab-riwayat" class="hidden">
+      <div class="card">
+        <div class="card-title" style="margin-bottom:16px;">📋 Riwayat Ujian</div>
+        <div style="overflow-x:auto;">
+          <table class="history-table" id="riwayat-table">
+            <thead><tr><th>Paket</th><th>Tanggal</th><th>Nilai</th><th>Benar</th><th>Salah</th><th>Aksi</th></tr></thead>
+            <tbody id="riwayat-tbody"></tbody>
+          </table>
+        </div>
+        <p id="riwayat-empty" class="hidden" style="color:var(--muted);text-align:center;padding:16px;">Belum ada riwayat ujian.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== EXAM VIEW ===== -->
+<div id="exam-view" class="hidden">
+  <div class="exam-topbar">
+    <div class="exam-title" id="exam-paket-title">Ujian</div>
+    <div class="exam-timer" id="exam-timer">00:00</div>
+    <button class="btn btn-danger btn-sm" onclick="confirmSubmit()">Selesai & Submit</button>
+  </div>
+  <div class="exam-body">
+    <div class="exam-question-panel" id="exam-qpanel"></div>
+    <div class="exam-progress-panel">
+      <div class="progress-panel-title">📋 Progres</div>
+      <div class="progress-legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#e2e8f0;border-color:#cbd5e1;"></div> Belum dijawab</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--answered);"></div> Sudah dijawab</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--doubt);"></div> Ragu-ragu</div>
+      </div>
+      <div class="progress-grid" id="progress-grid"></div>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);font-size:.82rem;color:var(--muted);" id="exam-stats"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== HASIL VIEW ===== -->
+<div id="hasil-view" class="hidden">
+  <div class="result-page">
+    <div class="result-card">
+      <div class="result-score" id="result-score">0</div>
+      <div class="result-name" id="result-name"></div>
+      <div class="result-sub" id="result-sub"></div>
+      <div class="result-review">
+        <div style="font-weight:700;margin-bottom:8px;">Review Jawaban</div>
+        <div class="result-review-grid" id="result-review-grid"></div>
+      </div>
+      <div class="btn-row" style="margin-top:24px;justify-content:center;flex-wrap:wrap;">
+        <button class="btn btn-primary" onclick="downloadHasilPDF()">📄 Download PDF</button>
+        <button class="btn btn-success" onclick="backToDashboardMurid()">🏠 Kembali ke Dashboard</button>
+      </div>
+    </div>
+    <div id="pie-chart-wrap" class="chart-wrap" style="max-width:300px;width:100%;text-align:center;">
+      <div class="chart-title">Distribusi Jawaban</div>
+      <canvas id="pie-chart" width="260" height="260"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// DATA STORE (localStorage)
+// ============================================================
+const DB = {
+  get: (k) => { try { return JSON.parse(localStorage.getItem('cbt_'+k)) || null; } catch { return null; } },
+  set: (k, v) => localStorage.setItem('cbt_'+k, JSON.stringify(v)),
+  getArr: (k) => DB.get(k) || [],
+  push: (k, v) => { const a = DB.getArr(k); a.push(v); DB.set(k, a); },
+};
+
+// ============================================================
+// STATE
+// ============================================================
+let currentUser = null; // {nama, pass} for murid
+let currentRole = null; // 'guru' | 'murid'
+let activePaketId = null;
+let examState = null; // {paketId, answers:{}, doubts:Set, currentQ, timerInterval, timeLeft}
+let editingPaketId = null;
+
+const GURU_CODE = 'GURU140404';
+
+// ============================================================
+// UTILS
+// ============================================================
+function uuid() { return 'pk_' + Math.random().toString(36).substr(2,9) + Date.now(); }
+function fmtDate(d) { return new Date(d).toLocaleString('id-ID',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}); }
+function fmtTime(s) { const m=Math.floor(s/60).toString().padStart(2,'0'),sc=(s%60).toString().padStart(2,'0'); return m+':'+sc; }
+
+// ============================================================
+// LANDING / MODALS
+// ============================================================
+function showGuruLogin() { openModal('modal-guru-login'); }
+function showMuridLogin() { openModal('modal-murid-login'); }
+function openModal(id) { closeModals(); document.getElementById(id).classList.remove('hidden'); }
+function closeModals() {
+  ['modal-guru-login','modal-murid-login','modal-murid-register','modal-kode-ujian'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.classList.add('hidden');
+  });
+}
+function switchToRegister() { openModal('modal-murid-register'); }
+function switchToLogin() { openModal('modal-murid-login'); }
+
+function doGuruLogin() {
+  const code = document.getElementById('guru-code-input').value;
+  if(code === GURU_CODE) {
+    closeModals();
+    currentRole = 'guru';
+    showGuruPanel();
+  } else {
+    document.getElementById('guru-login-alert').innerHTML = '<div class="alert alert-danger">⚠ Kode salah!</div>';
+  }
+}
+
+function doMuridLogin() {
+  const nama = document.getElementById('murid-login-name').value.trim();
+  const pass = document.getElementById('murid-login-pass').value;
+  if(!nama || !pass) { document.getElementById('murid-login-alert').innerHTML='<div class="alert alert-danger">Nama dan password wajib diisi</div>'; return; }
+  const users = DB.getArr('users');
+  const user = users.find(u => u.nama.toLowerCase()===nama.toLowerCase() && u.pass===pass);
+  if(!user) { document.getElementById('murid-login-alert').innerHTML='<div class="alert alert-danger">Nama atau password salah, atau akun belum terdaftar</div>'; return; }
+  currentUser = user;
+  currentRole = 'murid';
+  closeModals();
+  showMuridPanel();
+}
+
+function doRegister() {
+  const nama = document.getElementById('reg-name').value.trim();
+  const pass = document.getElementById('reg-pass').value;
+  const pass2 = document.getElementById('reg-pass2').value;
+  if(!nama || !pass) { document.getElementById('murid-reg-alert').innerHTML='<div class="alert alert-danger">Semua field wajib diisi</div>'; return; }
+  if(pass !== pass2) { document.getElementById('murid-reg-alert').innerHTML='<div class="alert alert-danger">Password tidak cocok</div>'; return; }
+  const users = DB.getArr('users');
+  if(users.find(u=>u.nama.toLowerCase()===nama.toLowerCase())) { document.getElementById('murid-reg-alert').innerHTML='<div class="alert alert-danger">Nama sudah terdaftar</div>'; return; }
+  users.push({nama, pass});
+  DB.set('users', users);
+  document.getElementById('murid-reg-alert').innerHTML='<div class="alert alert-success">✅ Akun berhasil dibuat! Silakan login.</div>';
+  setTimeout(switchToLogin, 1500);
+}
+
+function logout() {
+  currentUser = null; currentRole = null; activePaketId = null;
+  stopExamTimer();
+  ['guru-panel','murid-panel','exam-view','hasil-view'].forEach(id=>document.getElementById(id).classList.add('hidden'));
+  document.getElementById('landing').classList.remove('hidden');
+}
+
+// ============================================================
+// SHOW PANELS
+// ============================================================
+function hideAll() {
+  ['landing','guru-panel','murid-panel','exam-view','hasil-view'].forEach(id=>document.getElementById(id).classList.add('hidden'));
+}
+
+function showGuruPanel() {
+  hideAll();
+  document.getElementById('guru-panel').classList.remove('hidden');
+  renderGuruDashboard();
+  populateSelectPakets('review-paket-select');
+  populateSelectPakets('rekap-paket-select');
+}
+
+function showMuridPanel() {
+  hideAll();
+  document.getElementById('murid-panel').classList.remove('hidden');
+  document.getElementById('murid-topbar-name').textContent = currentUser.nama;
+  switchMuridTab('dashboard');
+}
+
+// ============================================================
+// GURU TABS
+// ============================================================
+function switchGuruTab(tab) {
+  ['dashboard','buat','review','rekap'].forEach(t=>{
+    document.getElementById('guru-tab-'+t).classList.toggle('hidden', t!==tab);
+  });
+  document.querySelectorAll('#guru-panel .tab').forEach((el,i)=>{
+    const names=['dashboard','buat','review','rekap'];
+    el.classList.toggle('active', names[i]===tab);
+  });
+  if(tab==='dashboard') renderGuruDashboard();
+  if(tab==='buat' && !editingPaketId) initQuestionEditor([]);
+  if(tab==='review') { populateSelectPakets('review-paket-select'); }
+  if(tab==='rekap') { populateSelectPakets('rekap-paket-select'); }
+}
+
+// ============================================================
+// GURU DASHBOARD
+// ============================================================
+function renderGuruDashboard() {
+  const pakets = DB.getArr('pakets');
+  const grid = document.getElementById('guru-paket-grid');
+  const empty = document.getElementById('guru-paket-empty');
+  if(!pakets.length) { grid.innerHTML=''; empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+  const now = Date.now();
+  grid.innerHTML = pakets.map(p=>{
+    const results = DB.getArr('results').filter(r=>r.paketId===p.id);
+    const status = !p.published ? 'draft' : (now < new Date(p.mulai).getTime() ? 'published' : (now > new Date(p.selesai).getTime() ? 'ended' : 'active'));
+    const statusLabel = {draft:'Draft',published:'Terjadwal',active:'Berlangsung',ended:'Selesai'}[status];
+    const badgeClass = 'badge-'+status;
+    return `<div class="paket-card">
+      <div class="paket-card-header">
+        <div class="paket-card-title">${p.nama}</div>
+        <span class="badge ${badgeClass}">${statusLabel}</span>
+      </div>
+      <div class="paket-meta">⏱ ${p.durasi} menit &nbsp;|&nbsp; 📝 ${p.soal.length} soal &nbsp;|&nbsp; 👥 ${results.length} peserta</div>
+      <div class="paket-meta">📅 ${p.mulai ? fmtDate(p.mulai) : '-'} → ${p.selesai ? fmtDate(p.selesai) : '-'}</div>
+      ${p.published ? `<div class="paket-code">🔑 ${p.kode}</div>` : ''}
+      <div class="paket-actions">
+        <button class="btn btn-outline btn-sm" onclick="editPaket('${p.id}')">✏ Edit</button>
+        <button class="btn btn-outline btn-sm" onclick="reviewPaketGuru('${p.id}')">📊 Review</button>
+        ${!p.published ? `<button class="btn btn-primary btn-sm" onclick="publishPaketById('${p.id}')">🚀 Publish</button>` : ''}
+        <button class="btn btn-danger btn-sm" onclick="deletePaket('${p.id}')">🗑</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function deletePaket(id) {
+  if(!confirm('Hapus paket ini?')) return;
+  const pakets = DB.getArr('pakets').filter(p=>p.id!==id);
+  DB.set('pakets', pakets);
+  renderGuruDashboard();
+}
+
+function editPaket(id) {
+  const p = DB.getArr('pakets').find(p=>p.id===id);
+  if(!p) return;
+  editingPaketId = id;
+  document.getElementById('paket-nama').value = p.nama;
+  document.getElementById('paket-durasi').value = p.durasi;
+  document.getElementById('paket-mulai').value = p.mulai || '';
+  document.getElementById('paket-selesai').value = p.selesai || '';
+  initQuestionEditor(p.soal);
+  switchGuruTab('buat');
+}
+
+function reviewPaketGuru(id) {
+  document.getElementById('review-paket-select').value = id;
+  switchGuruTab('review');
+  loadReview();
+}
+
+function publishPaketById(id) {
+  const pakets = DB.getArr('pakets');
+  const idx = pakets.findIndex(p=>p.id===id);
+  if(idx<0) return;
+  if(!pakets[idx].kode) pakets[idx].kode = generateKode();
+  pakets[idx].published = true;
+  DB.set('pakets', pakets);
+  renderGuruDashboard();
+  alert('Paket dipublish!\nKode: '+pakets[idx].kode);
+}
+
+function generateKode() { return 'UJI-'+Math.random().toString(36).substr(2,6).toUpperCase(); }
+
+// ============================================================
+// QUESTION EDITOR
+// ============================================================
+let questions = [];
+
+function initQuestionEditor(soal) {
+  questions = soal.length ? JSON.parse(JSON.stringify(soal)) : [newQ()];
+  renderEditor();
+}
+
+function newQ() { return {teks:'', opsi:['','','','',''], kunci:0}; }
+
+function addQuestion() { questions.push(newQ()); renderEditor(); }
+
+function removeQuestion(i) {
+  if(questions.length<=1) return;
+  questions.splice(i,1);
+  renderEditor();
+}
+
+function renderEditor() {
+  const container = document.getElementById('questions-editor');
+  container.innerHTML = questions.map((q,i)=>`
+    <div class="question-editor">
+      <div class="q-num">Soal ${i+1} <button class="btn btn-danger btn-sm" style="float:right;" onclick="removeQuestion(${i})">× Hapus</button></div>
+      <div class="form-group">
+        <label>Teks Soal</label>
+        <textarea rows="3" placeholder="Tulis soal di sini..." onchange="questions[${i}].teks=this.value">${q.teks}</textarea>
+      </div>
+      ${['A','B','C','D','E'].map((opt,j)=>`
+        <div class="option-row">
+          <div class="option-label">${opt}</div>
+          <input type="text" value="${q.opsi[j]||''}" placeholder="Pilihan ${opt}" onchange="questions[${i}].opsi[${j}]=this.value">
+          <button class="correct-btn ${q.kunci===j?'selected':''}" onclick="setKunci(${i},${j})">✓ Kunci</button>
+        </div>
+      `).join('')}
+    </div>
+  `).join('');
+}
+
+function setKunci(qIdx, opsiIdx) {
+  questions[qIdx].kunci = opsiIdx;
+  renderEditor();
+}
+
+// ============================================================
+// SAVE / PUBLISH PAKET
+// ============================================================
+function savePaket() {
+  syncEditorData();
+  const nama = document.getElementById('paket-nama').value.trim();
+  const durasi = parseInt(document.getElementById('paket-durasi').value);
+  const mulai = document.getElementById('paket-mulai').value;
+  const selesai = document.getElementById('paket-selesai').value;
+  if(!nama) { document.getElementById('buat-alert').innerHTML='<div class="alert alert-danger">Nama paket wajib diisi</div>'; return; }
+  if(questions.some(q=>!q.teks.trim())) { document.getElementById('buat-alert').innerHTML='<div class="alert alert-danger">Ada soal yang belum diisi</div>'; return; }
+  const pakets = DB.getArr('pakets');
+  if(editingPaketId) {
+    const idx = pakets.findIndex(p=>p.id===editingPaketId);
+    if(idx>=0) { pakets[idx]={...pakets[idx],nama,durasi,mulai,selesai,soal:JSON.parse(JSON.stringify(questions))}; }
+  } else {
+    pakets.push({id:uuid(),nama,durasi,mulai,selesai,soal:JSON.parse(JSON.stringify(questions)),published:false,kode:''});
+  }
+  DB.set('pakets', pakets);
+  document.getElementById('buat-alert').innerHTML='<div class="alert alert-success">✅ Paket disimpan!</div>';
+  populateSelectPakets('review-paket-select');
+  populateSelectPakets('rekap-paket-select');
+}
+
+function publishPaket() {
+  syncEditorData();
+  const nama = document.getElementById('paket-nama').value.trim();
+  const durasi = parseInt(document.getElementById('paket-durasi').value);
+  const mulai = document.getElementById('paket-mulai').value;
+  const selesai = document.getElementById('paket-selesai').value;
+  if(!nama || !mulai || !selesai) { document.getElementById('buat-alert').innerHTML='<div class="alert alert-danger">Nama, tanggal mulai, dan selesai wajib diisi</div>'; return; }
+  const kode = generateKode();
+  const pakets = DB.getArr('pakets');
+  if(editingPaketId) {
+    const idx = pakets.findIndex(p=>p.id===editingPaketId);
+    if(idx>=0) { pakets[idx]={...pakets[idx],nama,durasi,mulai,selesai,soal:JSON.parse(JSON.stringify(questions)),published:true,kode:pakets[idx].kode||kode}; }
+  } else {
+    const newId=uuid();
+    pakets.push({id:newId,nama,durasi,mulai,selesai,soal:JSON.parse(JSON.stringify(questions)),published:true,kode});
+    editingPaketId = newId;
+  }
+  DB.set('pakets', pakets);
+  const finalKode = pakets.find(p=>p.id===editingPaketId)?.kode || kode;
+  document.getElementById('kode-result').classList.remove('hidden');
+  document.getElementById('kode-result').innerHTML = `✅ Paket dipublish! Kode ujian: <strong style="font-size:1.2rem;">${finalKode}</strong> — Bagikan kode ini ke siswa.`;
+  populateSelectPakets('review-paket-select');
+  populateSelectPakets('rekap-paket-select');
+  renderGuruDashboard();
+}
+
+function syncEditorData() {
+  const qs = document.querySelectorAll('.question-editor');
+  qs.forEach((el,i)=>{
+    const ta = el.querySelector('textarea');
+    if(ta && questions[i]) questions[i].teks = ta.value;
+    const inputs = el.querySelectorAll('.option-row input');
+    inputs.forEach((inp,j)=>{ if(questions[i]) questions[i].opsi[j]=inp.value; });
+  });
+}
+
+function clearPaketForm() {
+  editingPaketId = null;
+  document.getElementById('paket-nama').value='';
+  document.getElementById('paket-durasi').value='60';
+  document.getElementById('paket-mulai').value='';
+  document.getElementById('paket-selesai').value='';
+  document.getElementById('kode-result').classList.add('hidden');
+  document.getElementById('buat-alert').innerHTML='';
+  initQuestionEditor([]);
+}
+
+// ============================================================
+// EXCEL IMPORT / TEMPLATE
+// ============================================================
+function importExcel(event) {
+  const file = event.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const wb = XLSX.read(e.target.result, {type:'binary'});
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const data = XLSX.utils.sheet_to_json(ws, {header:1});
+    const newQs = [];
+    for(let r=1;r<data.length;r++) {
+      const row = data[r];
+      if(!row || !row[0]) continue;
+      const kunciMap = {A:0,B:1,C:2,D:3,E:4};
+      newQs.push({
+        teks: String(row[0]||''),
+        opsi: [String(row[1]||''),String(row[2]||''),String(row[3]||''),String(row[4]||''),String(row[5]||'')],
+        kunci: kunciMap[String(row[6]||'A').toUpperCase()] || 0
+      });
+    }
+    if(newQs.length) { questions = newQs; renderEditor(); alert(`${newQs.length} soal berhasil diimport!`); }
+    else alert('Tidak ada soal yang ditemukan. Pastikan format Excel sesuai template.');
+  };
+  reader.readAsBinaryString(file);
+  event.target.value = '';
+}
+
+function downloadTemplate() {
+  const ws = XLSX.utils.aoa_to_sheet([
+    ['Soal','Pilihan A','Pilihan B','Pilihan C','Pilihan D','Pilihan E','Kunci (A/B/C/D/E)'],
+    ['Contoh: Ibu kota Indonesia adalah...','Jakarta','Bandung','Surabaya','Medan','Bali','A'],
+    ['2+2=?','3','4','5','6','7','B'],
+  ]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Soal');
+  XLSX.writeFile(wb, 'template_soal_cbt.xlsx');
+}
+
+// ============================================================
+// REVIEW SOAL GURU
+// ============================================================
+function populateSelectPakets(selectId) {
+  const sel = document.getElementById(selectId);
+  if(!sel) return;
+  const pakets = DB.getArr('pakets');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">-- Pilih Paket --</option>' + pakets.map(p=>`<option value="${p.id}">${p.nama}</option>`).join('');
+  if(cur) sel.value = cur;
+}
+
+function loadReview() {
+  const id = document.getElementById('review-paket-select').value;
+  const paket = DB.getArr('pakets').find(p=>p.id===id);
+  const results = DB.getArr('results').filter(r=>r.paketId===id);
+  const container = document.getElementById('review-content');
+  if(!paket) { container.innerHTML='<p style="color:var(--muted);text-align:center;padding:24px;">Pilih paket untuk melihat review soal.</p>'; return; }
+  if(!results.length) { container.innerHTML='<p style="color:var(--muted);text-align:center;padding:24px;">Belum ada peserta yang mengerjakan paket ini.</p>'; return; }
+  const soal = paket.soal;
+  const boxes = soal.map((q,i)=>{
+    const benar = results.filter(r=>r.answers[i]===q.kunci).length;
+    const salah = results.length - benar;
+    const isGreen = benar >= salah;
+    return `<div class="review-box ${isGreen?'green':'red'}" title="Soal ${i+1}: ${benar} benar, ${salah} salah">${i+1}</div>`;
+  }).join('');
+  container.innerHTML = `
+    <div style="margin-bottom:14px;">
+      <strong>${paket.nama}</strong> &nbsp;|&nbsp; ${results.length} peserta &nbsp;|&nbsp; ${soal.length} soal
+    </div>
+    <div class="review-grid">${boxes}</div>
+    <div style="margin-top:14px;font-size:.83rem;color:var(--muted);">🟢 Lebih banyak benar &nbsp; 🔴 Lebih banyak salah</div>
+  `;
+}
+
+// ============================================================
+// REKAP NILAI
+// ============================================================
+function loadRekap() {
+  const id = document.getElementById('rekap-paket-select').value;
+  const paket = DB.getArr('pakets').find(p=>p.id===id);
+  const results = DB.getArr('results').filter(r=>r.paketId===id);
+  const container = document.getElementById('rekap-content');
+  const exportBtn = document.getElementById('rekap-export-btn');
+  if(!paket || !results.length) {
+    container.innerHTML='<p style="color:var(--muted);text-align:center;padding:24px;">Tidak ada data nilai untuk paket ini.</p>';
+    if(exportBtn) exportBtn.classList.add('hidden');
+    return;
+  }
+  if(exportBtn) exportBtn.classList.remove('hidden');
+  const rows = results.map((r,i)=>`
+    <tr>
+      <td>${i+1}</td>
+      <td>${r.nama}</td>
+      <td>${fmtDate(r.tanggal)}</td>
+      <td><span style="font-weight:700;color:var(--primary);">${r.nilai}</span></td>
+    </tr>`).join('');
+  container.innerHTML = `<div style="overflow-x:auto;"><table class="history-table"><thead><tr><th>#</th><th>Nama</th><th>Tanggal</th><th>Nilai</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+function exportRekap() {
+  const id = document.getElementById('rekap-paket-select').value;
+  const paket = DB.getArr('pakets').find(p=>p.id===id);
+  const results = DB.getArr('results').filter(r=>r.paketId===id);
+  if(!results.length) return;
+  const data = [['Nama','Nilai'],...results.map(r=>[r.nama, r.nilai])];
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Rekap');
+  XLSX.writeFile(wb, `rekap_${paket?.nama||'ujian'}.xlsx`);
+}
+
+// ============================================================
+// MURID TABS
+// ============================================================
+function switchMuridTab(tab) {
+  ['dashboard','ujian','riwayat'].forEach(t=>{
+    document.getElementById('murid-tab-'+t).classList.toggle('hidden', t!==tab);
+  });
+  document.querySelectorAll('#murid-panel .tab').forEach((el,i)=>{
+    const names=['dashboard','ujian','riwayat'];
+    el.classList.toggle('active', names[i]===tab);
+  });
+  if(tab==='dashboard') renderMuridDashboard();
+  if(tab==='riwayat') renderRiwayat();
+}
+
+// ============================================================
+// MURID DASHBOARD
+// ============================================================
+function renderMuridDashboard() {
+  const results = DB.getArr('results').filter(r=>r.nama===currentUser.nama);
+  const pakets = DB.getArr('pakets').filter(p=>p.published);
+  const now = Date.now();
+
+  // Grafik nilai
+  drawNilaiChart(results);
+
+  // Paket tersedia
+  const availDiv = document.getElementById('murid-available-paket');
+  if(!pakets.length) { availDiv.innerHTML='<p style="color:var(--muted);font-size:.88rem;">Belum ada paket yang dipublish.</p>'; }
+  else {
+    availDiv.innerHTML = pakets.map(p=>{
+      const done = results.find(r=>r.paketId===p.id);
+      const start = new Date(p.mulai).getTime();
+      const end = new Date(p.selesai).getTime();
+      const available = now >= start && now <= end;
+      const upcoming = now < start;
+      const statusText = done ? `✅ Selesai (${done.nilai})` : available ? '▶ Tersedia' : upcoming ? `🔒 Mulai ${fmtDate(p.mulai)}` : '⌛ Berakhir';
+      const canStart = available && !done;
+      return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 14px;background:${canStart?'#f0fdf4':'#f8fafc'};border-radius:8px;border:1.5px solid ${canStart?'#86efac':'var(--border)'};">
+        <div>
+          <div style="font-weight:600;font-size:.92rem;">${p.nama}</div>
+          <div style="color:var(--muted);font-size:.78rem;">${statusText}</div>
+        </div>
+        ${canStart?`<button class="btn btn-success btn-sm" onclick="startUjianByPaket('${p.id}')">Mulai</button>`:''}
+      </div>`;
+    }).join('');
+  }
+
+  // Hasil terakhir
+  const hasilDiv = document.getElementById('murid-hasil-list');
+  const emptyEl = document.getElementById('murid-hasil-empty');
+  if(!results.length) { hasilDiv.innerHTML=''; emptyEl.style.display='block'; return; }
+  emptyEl.style.display='none';
+  hasilDiv.innerHTML = results.slice(-6).reverse().map(r=>{
+    const p = DB.getArr('pakets').find(pk=>pk.id===r.paketId);
+    const benar = r.correct; const total = r.total;
+    return `<div class="card" style="margin:0;padding:18px;">
+      <div style="display:flex;align-items:center;gap:14px;">
+        <div class="score-circle">${r.nilai}</div>
+        <div>
+          <div style="font-weight:700;">${p?.nama||'Ujian'}</div>
+          <div style="color:var(--muted);font-size:.82rem;">📅 ${fmtDate(r.tanggal)}</div>
+          <div style="font-size:.82rem;margin-top:4px;">✅ ${benar} benar &nbsp;|&nbsp; ❌ ${total-benar} salah</div>
+        </div>
+      </div>
+      <canvas id="pie-mini-${r.paketId+r.tanggal}" width="100" height="100" style="margin-top:10px;"></canvas>
+    </div>`;
+  }).join('');
+  // draw mini pies
+  setTimeout(()=>{
+    results.slice(-6).reverse().forEach(r=>{
+      const canvasId = 'pie-mini-'+r.paketId+r.tanggal;
+      const el = document.getElementById(canvasId);
+      if(el) drawMiniPie(el, r.correct, r.total-r.correct);
+    });
+  },50);
+}
+
+function drawNilaiChart(results) {
+  const canvas = document.getElementById('nilai-chart');
+  if(!canvas) return;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  if(!results.length) { ctx.fillStyle='#94a3b8'; ctx.font='13px Segoe UI'; ctx.fillText('Belum ada data',10,60); return; }
+  const W=canvas.width, H=canvas.height, pad=30;
+  const data = results.slice(-8);
+  const vals = data.map(r=>r.nilai);
+  const max=100, min=0;
+  const stepX=(W-pad*2)/(Math.max(data.length-1,1));
+  ctx.strokeStyle='#3b82f6'; ctx.lineWidth=2; ctx.beginPath();
+  data.forEach((r,i)=>{
+    const x=pad+i*stepX, y=H-pad-(r.nilai/(max-min))*(H-pad*2);
+    if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  });
+  ctx.stroke();
+  ctx.fillStyle='#3b82f6';
+  data.forEach((r,i)=>{
+    const x=pad+i*stepX, y=H-pad-(r.nilai/(max-min))*(H-pad*2);
+    ctx.beginPath(); ctx.arc(x,y,4,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#1e293b'; ctx.font='11px Segoe UI'; ctx.fillText(r.nilai,x-8,y-8); ctx.fillStyle='#3b82f6';
+  });
+}
+
+function drawMiniPie(canvas, benar, salah) {
+  const ctx=canvas.getContext('2d');
+  const total=benar+salah; if(!total) return;
+  const cx=50,cy=50,r=40;
+  const benarAngle=(benar/total)*Math.PI*2;
+  ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,0-Math.PI/2,benarAngle-Math.PI/2); ctx.closePath(); ctx.fillStyle='#22c55e'; ctx.fill();
+  ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,benarAngle-Math.PI/2,2*Math.PI-Math.PI/2); ctx.closePath(); ctx.fillStyle='#ef4444'; ctx.fill();
+  ctx.fillStyle='#fff'; ctx.font='bold 11px Segoe UI'; ctx.textAlign='center';
+  if(benar) ctx.fillText(benar, cx+Math.cos(benarAngle/2-Math.PI/2)*22, cy+Math.sin(benarAngle/2-Math.PI/2)*22+4);
+  if(salah) ctx.fillText(salah, cx+Math.cos(benarAngle+(2*Math.PI-benarAngle)/2-Math.PI/2)*22, cy+Math.sin(benarAngle+(2*Math.PI-benarAngle)/2-Math.PI/2)*22+4);
+  ctx.textAlign='left';
+}
+
+function renderRiwayat() {
+  const results = DB.getArr('results').filter(r=>r.nama===currentUser.nama);
+  const tbody = document.getElementById('riwayat-tbody');
+  const empty = document.getElementById('riwayat-empty');
+  if(!results.length) { tbody.innerHTML=''; empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+  tbody.innerHTML = results.map(r=>{
+    const p = DB.getArr('pakets').find(pk=>pk.id===r.paketId);
+    return `<tr>
+      <td>${p?.nama||'Ujian'}</td>
+      <td>${fmtDate(r.tanggal)}</td>
+      <td><strong style="color:var(--primary);">${r.nilai}</strong></td>
+      <td>${r.correct}</td>
+      <td>${r.total-r.correct}</td>
+      <td><button class="btn btn-outline btn-sm" onclick="downloadResultPDF('${r.paketId}','${r.tanggal}')">📄 PDF</button></td>
+    </tr>`;
+  }).join('');
+}
+
+// ============================================================
+// START UJIAN
+// ============================================================
+function startUjianFromTab() {
+  const kode = document.getElementById('kode-ujian-murid').value.trim().toUpperCase();
+  document.getElementById('ujian-alert').innerHTML='';
+  const paket = DB.getArr('pakets').find(p=>p.kode===kode);
+  if(!paket) { document.getElementById('ujian-alert').innerHTML='<div class="alert alert-danger">Kode tidak ditemukan</div>'; return; }
+  if(!paket.published) { document.getElementById('ujian-alert').innerHTML='<div class="alert alert-warn">Paket belum dipublish</div>'; return; }
+  const now = Date.now();
+  const start = new Date(paket.mulai).getTime();
+  const end = new Date(paket.selesai).getTime();
+  if(now < start) { document.getElementById('ujian-alert').innerHTML=`<div class="alert alert-warn">Ujian belum bisa diakses. Mulai: ${fmtDate(paket.mulai)}</div>`; return; }
+  if(now > end) { document.getElementById('ujian-alert').innerHTML='<div class="alert alert-danger">Ujian sudah berakhir</div>'; return; }
+  const done = DB.getArr('results').find(r=>r.paketId===paket.id && r.nama===currentUser.nama);
+  if(done) { document.getElementById('ujian-alert').innerHTML='<div class="alert alert-warn">Anda sudah mengerjakan ujian ini</div>'; return; }
+  launchExam(paket);
+}
+
+function startUjianByPaket(paketId) {
+  const paket = DB.getArr('pakets').find(p=>p.id===paketId);
+  if(!paket) return;
+  launchExam(paket);
+}
+
+function launchExam(paket) {
+  activePaketId = paket.id;
+  examState = {
+    paketId: paket.id,
+    answers: {},
+    doubts: new Set(),
+    currentQ: 0,
+    timeLeft: paket.durasi * 60,
+    timerInterval: null
+  };
+  document.getElementById('exam-paket-title').textContent = paket.nama;
+  hideAll();
+  document.getElementById('exam-view').classList.remove('hidden');
+  renderExamQuestion(paket, 0);
+  renderProgressGrid(paket);
+  updateExamStats(paket);
+  startTimer(paket);
+}
+
+function startTimer(paket) {
+  document.getElementById('exam-timer').textContent = fmtTime(examState.timeLeft);
+  examState.timerInterval = setInterval(()=>{
+    examState.timeLeft--;
+    document.getElementById('exam-timer').textContent = fmtTime(examState.timeLeft);
+    if(examState.timeLeft <= 0) { clearInterval(examState.timerInterval); submitExam(paket); }
+    if(examState.timeLeft <= 60) document.getElementById('exam-timer').style.background='#ef4444';
+    else if(examState.timeLeft <= 300) document.getElementById('exam-timer').style.background='#f59e0b';
+  }, 1000);
+}
+
+function stopExamTimer() { if(examState?.timerInterval) clearInterval(examState.timerInterval); }
+
+// ============================================================
+// EXAM RENDER
+// ============================================================
+function renderExamQuestion(paket, qIdx) {
+  examState.currentQ = qIdx;
+  const q = paket.soal[qIdx];
+  const opts = ['A','B','C','D','E'];
+  const isDoubt = examState.doubts.has(qIdx);
+  const panel = document.getElementById('exam-qpanel');
+  panel.innerHTML = `
+    <div class="question-card">
+      <div class="q-header">
+        <span class="q-number">Soal ${qIdx+1} dari ${paket.soal.length}</span>
+        ${isDoubt?'<span style="color:var(--doubt);font-weight:700;">⚠ Ragu-ragu</span>':''}
+      </div>
+      <div class="q-text">${q.teks}</div>
+      <div class="options-list">
+        ${q.opsi.map((op,j)=>`
+          <label class="option-item ${examState.answers[qIdx]===j?'selected':''}">
+            <input type="radio" name="q${qIdx}" value="${j}" ${examState.answers[qIdx]===j?'checked':''} onchange="selectAnswer(${qIdx},${j})">
+            <span class="option-key">${opts[j]}</span>
+            <span>${op}</span>
+          </label>
+        `).join('')}
+      </div>
+      <div class="q-nav">
+        <button class="btn btn-outline" onclick="navQ(${qIdx-1})" ${qIdx===0?'disabled':''}>← Sebelumnya</button>
+        <button class="btn btn-doubt ${isDoubt?'active':''}" onclick="toggleDoubt(${qIdx})">⚠ ${isDoubt?'Tidak Ragu':'Ragu-ragu'}</button>
+        <button class="btn btn-primary" onclick="navQ(${qIdx+1})" ${qIdx===paket.soal.length-1?'disabled':''}>Selanjutnya →</button>
+      </div>
+    </div>
+  `;
+  updateProgressGrid(paket);
+}
+
+function selectAnswer(qIdx, val) {
+  examState.answers[qIdx] = val;
+  const paket = DB.getArr('pakets').find(p=>p.id===examState.paketId);
+  renderExamQuestion(paket, qIdx);
+  updateExamStats(paket);
+}
+
+function toggleDoubt(qIdx) {
+  if(examState.doubts.has(qIdx)) examState.doubts.delete(qIdx);
+  else examState.doubts.add(qIdx);
+  const paket = DB.getArr('pakets').find(p=>p.id===examState.paketId);
+  renderExamQuestion(paket, qIdx);
+}
+
+function navQ(qIdx) {
+  const paket = DB.getArr('pakets').find(p=>p.id===examState.paketId);
+  if(qIdx<0||qIdx>=paket.soal.length) return;
+  renderExamQuestion(paket, qIdx);
+}
+
+// ============================================================
+// PROGRESS GRID
+// ============================================================
+function renderProgressGrid(paket) {
+  const grid = document.getElementById('progress-grid');
+  grid.innerHTML = paket.soal.map((_,i)=>`
+    <div class="prog-box" id="pb-${i}" onclick="navQ(${i})">${i+1}</div>
+  `).join('');
+}
+
+function updateProgressGrid(paket) {
+  paket.soal.forEach((_,i)=>{
+    const el = document.getElementById('pb-'+i);
+    if(!el) return;
+    el.className = 'prog-box';
+    if(examState.doubts.has(i)) el.classList.add('doubt');
+    else if(examState.answers[i]!==undefined) el.classList.add('answered');
+    if(i===examState.currentQ) el.classList.add('current');
+  });
+}
+
+function updateExamStats(paket) {
+  const answered = Object.keys(examState.answers).length;
+  const doubt = examState.doubts.size;
+  const total = paket.soal.length;
+  const unanswered = total - answered;
+  document.getElementById('exam-stats').innerHTML = `✅ ${answered} dijawab &nbsp; ⚠ ${doubt} ragu &nbsp; ○ ${unanswered} belum`;
+}
+
+// ============================================================
+// SUBMIT EXAM
+// ============================================================
+function confirmSubmit() {
+  const paket = DB.getArr('pakets').find(p=>p.id===examState.paketId);
+  const answered = Object.keys(examState.answers).length;
+  const total = paket.soal.length;
+  if(answered < total) {
+    if(!confirm(`Masih ada ${total-answered} soal belum dijawab. Submit sekarang?`)) return;
+  }
+  submitExam(paket);
+}
+
+function submitExam(paket) {
+  stopExamTimer();
+  let correct = 0;
+  paket.soal.forEach((q,i)=>{ if(examState.answers[i]===q.kunci) correct++; });
+  const nilai = Math.round((correct/paket.soal.length)*100);
+  const result = {
+    paketId: paket.id,
+    nama: currentUser.nama,
+    nilai, correct,
+    total: paket.soal.length,
+    answers: {...examState.answers},
+    tanggal: new Date().toISOString()
+  };
+  DB.push('results', result);
+  showHasil(result, paket);
+}
+
+// ============================================================
+// HASIL
+// ============================================================
+function showHasil(result, paket) {
+  hideAll();
+  document.getElementById('hasil-view').classList.remove('hidden');
+  document.getElementById('result-score').textContent = result.nilai;
+  document.getElementById('result-name').textContent = result.nama;
+  document.getElementById('result-sub').textContent = `${paket.nama} — ${fmtDate(result.tanggal)}`;
+  const grid = document.getElementById('result-review-grid');
+  grid.innerHTML = paket.soal.map((q,i)=>{
+    const isCorrect = result.answers[i]===q.kunci;
+    return `<div class="rr-box ${isCorrect?'correct':'wrong'}" title="Soal ${i+1}: ${isCorrect?'Benar':'Salah'}">${i+1}</div>`;
+  }).join('');
+  drawResultPie(result.correct, result.total-result.correct);
+}
+
+function drawResultPie(benar, salah) {
+  const canvas = document.getElementById('pie-chart');
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  const total=benar+salah; const cx=130,cy=130,r=110;
+  if(!total) return;
+  const benarAngle=(benar/total)*Math.PI*2;
+  ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,-Math.PI/2,benarAngle-Math.PI/2); ctx.closePath(); ctx.fillStyle='#22c55e'; ctx.fill();
+  ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,benarAngle-Math.PI/2,2*Math.PI-Math.PI/2); ctx.closePath(); ctx.fillStyle='#ef4444'; ctx.fill();
+  ctx.fillStyle='#fff'; ctx.font='bold 16px Segoe UI'; ctx.textAlign='center';
+  if(benar>0) { const a=benarAngle/2-Math.PI/2; ctx.fillText(benar,cx+Math.cos(a)*r*0.65,cy+Math.sin(a)*r*0.65+5); }
+  if(salah>0) { const a=benarAngle+(2*Math.PI-benarAngle)/2-Math.PI/2; ctx.fillText(salah,cx+Math.cos(a)*r*0.65,cy+Math.sin(a)*r*0.65+5); }
+  ctx.font='13px Segoe UI'; ctx.fillStyle='#22c55e'; ctx.fillText('Benar', cx-50, cy+r+18);
+  ctx.fillStyle='#ef4444'; ctx.fillText('Salah', cx+30, cy+r+18);
+  ctx.textAlign='left';
+}
+
+function backToDashboardMurid() {
+  hideAll();
+  showMuridPanel();
+}
+
+// ============================================================
+// DOWNLOAD PDF
+// ============================================================
+function downloadHasilPDF() {
+  const results = DB.getArr('results').filter(r=>r.nama===currentUser.nama);
+  const result = results[results.length-1];
+  if(!result) return;
+  generatePDF(result);
+}
+
+function downloadResultPDF(paketId, tanggal) {
+  const result = DB.getArr('results').find(r=>r.paketId===paketId && r.tanggal===tanggal && r.nama===currentUser.nama);
+  if(!result) return;
+  generatePDF(result);
+}
+
+function generatePDF(result) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+  const paket = DB.getArr('pakets').find(p=>p.id===result.paketId);
+  let y=20;
+  doc.setFontSize(18); doc.setFont('helvetica','bold');
+  doc.text('HASIL UJIAN CBT', 105, y, {align:'center'}); y+=12;
+  doc.setDrawColor(30,64,175); doc.setLineWidth(0.8); doc.line(20,y,190,y); y+=10;
+  doc.setFontSize(12); doc.setFont('helvetica','normal');
+  doc.text(`Nama: ${result.nama}`, 20, y); y+=8;
+  doc.text(`Paket: ${paket?.nama||'-'}`, 20, y); y+=8;
+  doc.text(`Tanggal: ${fmtDate(result.tanggal)}`, 20, y); y+=8;
+  doc.setFont('helvetica','bold'); doc.setFontSize(15);
+  doc.setTextColor(30,64,175);
+  doc.text(`Nilai: ${result.nilai}`, 20, y); y+=10;
+  doc.setTextColor(0,0,0); doc.setFontSize(11); doc.setFont('helvetica','normal');
+  doc.text(`Benar: ${result.correct} | Salah: ${result.total-result.correct} | Total: ${result.total}`, 20, y); y+=12;
+  doc.setDrawColor(200,200,200); doc.line(20,y,190,y); y+=8;
+  doc.setFont('helvetica','bold'); doc.text('DETAIL JAWABAN:', 20, y); y+=8;
+  doc.setFont('helvetica','normal');
+  const opts=['A','B','C','D','E'];
+  paket?.soal.forEach((q,i)=>{
+    if(y>270) { doc.addPage(); y=20; }
+    const isCorrect = result.answers[i]===q.kunci;
+    const jawab = result.answers[i]!==undefined ? opts[result.answers[i]] : '-';
+    const kunci = opts[q.kunci];
+    doc.setTextColor(isCorrect?34:220, isCorrect?197:38, isCorrect?94:38);
+    doc.text(`Soal ${i+1}: Jawaban ${jawab} | Kunci ${kunci} → ${isCorrect?'✓ BENAR':'✗ SALAH'}`, 20, y); y+=7;
+  });
+  doc.setTextColor(0,0,0);
+  doc.save(`hasil_ujian_${result.nama}_${paket?.nama||'cbt'}.pdf`);
+}
+
+// ============================================================
+// INIT
+// ============================================================
+document.addEventListener('DOMContentLoaded', ()=>{
+  // Set default datetime
+  const now = new Date();
+  const fmt = d => d.toISOString().slice(0,16);
+  const later = new Date(now.getTime()+60*60000);
+  const el1 = document.getElementById('paket-mulai');
+  const el2 = document.getElementById('paket-selesai');
+  if(el1) el1.value = fmt(now);
+  if(el2) el2.value = fmt(later);
+  initQuestionEditor([]);
+});
+</script>
+</body>
+</html>
