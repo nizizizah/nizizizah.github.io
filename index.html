@@ -556,12 +556,22 @@ const DB = {
     if (e1) { console.error('refreshPakets:', e1); return; }
     const { data: soalRows, error: e2 } = await sb.from('pertanyaan').select('*').order('urutan', { ascending: true });
     if (e2) { console.error('refreshPakets soal:', e2); }
+    // utcStrToWib: konversi string UTC dari Supabase ke "YYYY-MM-DDTHH:mm" WIB
+    // Supabase timestamptz selalu kirim UTC, kita tambah 7 jam untuk WIB
+    const utcStrToWib = s => {
+      if (!s) return null;
+      const d = new Date(s); // ini UTC-aware karena ada offset di string Supabase
+      // Tambah 7 jam (WIB = UTC+7)
+      const wib = new Date(d.getTime() + 7 * 60 * 60 * 1000);
+      const pad = n => String(n).padStart(2,'0');
+      return wib.getUTCFullYear()+'-'+pad(wib.getUTCMonth()+1)+'-'+pad(wib.getUTCDate())+'T'+pad(wib.getUTCHours())+':'+pad(wib.getUTCMinutes());
+    };
     this.cache.pakets = (pakets || []).map(p => ({
       id: p.id,
       nama: p.title,
       durasi: p.durasi,
-      mulai: p.start_time,
-      selesai: p.end_time,
+      mulai: utcStrToWib(p.start_time),
+      selesai: utcStrToWib(p.end_time),
       published: p.published,
       kode: p.package_code || '',
       soal: (soalRows || []).filter(s => s.package_id === p.id).map(s => ({
@@ -614,8 +624,9 @@ const DB = {
     const payload = {
       title: paket.nama,
       package_code: paket.kode || null,
-      start_time: paket.mulai || null,
-      end_time: paket.selesai || null,
+      // Tambah +07:00 agar Supabase tahu ini WIB, sehingga konversi UTC-nya benar
+      start_time: paket.mulai ? paket.mulai.substring(0,16) + ':00+07:00' : null,
+      end_time: paket.selesai ? paket.selesai.substring(0,16) + ':00+07:00' : null,
       durasi: paket.durasi,
       published: paket.published
     };
@@ -695,17 +706,25 @@ function fmtDate(d) { return new Date(d).toLocaleString('id-ID',{day:'2-digit',m
 // Untuk waktu mulai/selesai paket yang disimpan sebagai teks WIB murni
 function fmtWaktu(str) {
   if (!str) return '-';
-  // str: "2024-01-15T14:00" atau "2024-01-15T14:00:00"
-  const d = new Date(str + (str.length <= 16 ? ':00' : ''));
-  // Baca komponen secara lokal (tidak ada timezone shift)
-  const pad = n => String(n).padStart(2,'0');
+  // Ambil komponen langsung dari string, TANPA lewat new Date agar tidak ada timezone shift
+  // Format yang datang dari DB bisa: "2024-01-15T16:00", "2024-01-15T16:00:00", "2024-01-15T16:00:00+07:00", dst
+  // Kita hanya ambil bagian tanggal & jam-nya saja (16 karakter pertama setelah strip timezone)
+  const clean = str.replace('T', ' ').substring(0, 16); // "2024-01-15 16:00"
+  const [datePart, timePart] = clean.split(' ');
+  const [yr, mo, dd] = datePart.split('-').map(Number);
+  const [hh, mm] = (timePart || '00:00').split(':').map(Number);
   const bulan = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agt','Sep','Okt','Nov','Des'];
-  return pad(d.getDate())+' '+bulan[d.getMonth()]+' '+d.getFullYear()+', '+pad(d.getHours())+'.'+pad(d.getMinutes());
+  return dd+' '+bulan[mo-1]+' '+yr+', '+String(hh).padStart(2,'0')+'.'+String(mm).padStart(2,'0');
 }
-// Parse string waktu WIB sebagai waktu lokal (bukan UTC)
+// Parse string waktu WIB -> timestamp ms, tanpa timezone shift
+// Baca komponen manual lalu buat Date sebagai waktu lokal browser
 function parseWaktu(str) {
   if (!str) return 0;
-  return new Date(str.length <= 16 ? str + ':00' : str).getTime();
+  const clean = str.replace('T', ' ').substring(0, 16);
+  const [datePart, timePart] = clean.split(' ');
+  const [yr, mo, dd] = datePart.split('-').map(Number);
+  const [hh, mm] = (timePart || '00:00').split(':').map(Number);
+  return new Date(yr, mo - 1, dd, hh, mm, 0).getTime(); // lokal browser, bukan UTC
 }
 function fmtTime(s) { const m=Math.floor(s/60).toString().padStart(2,'0'),sc=(s%60).toString().padStart(2,'0'); return m+':'+sc; }
 
@@ -877,8 +896,8 @@ function editPaket(id) {
   editingPaketId = id;
   document.getElementById('paket-nama').value = p.nama;
   document.getElementById('paket-durasi').value = p.durasi;
-  document.getElementById('paket-mulai').value = p.mulai ? p.mulai.slice(0,16) : '';
-  document.getElementById('paket-selesai').value = p.selesai ? p.selesai.slice(0,16) : '';
+  document.getElementById('paket-mulai').value = p.mulai ? p.mulai.replace('T',' ').substring(0,16).replace(' ','T') : '';
+  document.getElementById('paket-selesai').value = p.selesai ? p.selesai.replace('T',' ').substring(0,16).replace(' ','T') : '';
   initQuestionEditor(p.soal);
   switchGuruTab('buat');
 }
