@@ -694,12 +694,6 @@ function uuid() { return 'pk_' + Math.random().toString(36).substr(2,9) + Date.n
 function fmtDate(d) { return new Date(d).toLocaleString('id-ID',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Jakarta'}); }
 function fmtTime(s) { const m=Math.floor(s/60).toString().padStart(2,'0'),sc=(s%60).toString().padStart(2,'0'); return m+':'+sc; }
 
-// Konversi nilai datetime-local (dianggap WIB) -> ISO string UTC untuk dikirim ke Supabase
-function wibToUtc(localVal) {
-  if (!localVal) return null;
-  // localVal: "2024-01-15T14:00" — kita anggap ini WIB (UTC+7), jadi kurangi 7 jam
-  return new Date(new Date(localVal).getTime() - 7 * 60 * 60 * 1000).toISOString();
-}
 
 // Konversi ISO UTC dari Supabase -> string "YYYY-MM-DDTHH:mm" dalam WIB untuk datetime-local input
 function utcToWibLocal(isoUtc) {
