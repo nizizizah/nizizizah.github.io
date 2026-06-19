@@ -614,8 +614,8 @@ const DB = {
     const payload = {
       title: paket.nama,
       package_code: paket.kode || null,
-      start_time: paket.mulai ? wibToUtc(paket.mulai) : null,
-      end_time: paket.selesai ? wibToUtc(paket.selesai) : null,
+      start_time: paket.mulai || null,
+      end_time: paket.selesai || null,
       durasi: paket.durasi,
       published: paket.published
     };
@@ -692,7 +692,23 @@ const GURU_CODE = 'GURU140404';
 // ============================================================
 function uuid() { return 'pk_' + Math.random().toString(36).substr(2,9) + Date.now(); }
 function fmtDate(d) { return new Date(d).toLocaleString('id-ID',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Jakarta'}); }
+// Untuk waktu mulai/selesai paket yang disimpan sebagai teks WIB murni
+function fmtWaktu(str) {
+  if (!str) return '-';
+  // str: "2024-01-15T14:00" atau "2024-01-15T14:00:00"
+  const d = new Date(str + (str.length <= 16 ? ':00' : ''));
+  // Baca komponen secara lokal (tidak ada timezone shift)
+  const pad = n => String(n).padStart(2,'0');
+  const bulan = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agt','Sep','Okt','Nov','Des'];
+  return pad(d.getDate())+' '+bulan[d.getMonth()]+' '+d.getFullYear()+', '+pad(d.getHours())+'.'+pad(d.getMinutes());
+}
+// Parse string waktu WIB sebagai waktu lokal (bukan UTC)
+function parseWaktu(str) {
+  if (!str) return 0;
+  return new Date(str.length <= 16 ? str + ':00' : str).getTime();
+}
 function fmtTime(s) { const m=Math.floor(s/60).toString().padStart(2,'0'),sc=(s%60).toString().padStart(2,'0'); return m+':'+sc; }
+
 
 // ============================================================
 // LANDING / MODALS
@@ -820,7 +836,7 @@ function renderGuruDashboard() {
   const now = Date.now();
   grid.innerHTML = pakets.map(p=>{
     const results = DB.getArr('results').filter(r=>r.paketId===p.id);
-    const status = !p.published ? 'draft' : (now < new Date(p.mulai).getTime() ? 'published' : (now > new Date(p.selesai).getTime() ? 'ended' : 'active'));
+    const status = !p.published ? 'draft' : (now < parseWaktu(p.mulai) ? 'published' : (now > parseWaktu(p.selesai) ? 'ended' : 'active'));
     const statusLabel = {draft:'Draft',published:'Terjadwal',active:'Berlangsung',ended:'Selesai'}[status];
     const badgeClass = 'badge-'+status;
     return `<div class="paket-card">
@@ -829,7 +845,7 @@ function renderGuruDashboard() {
         <span class="badge ${badgeClass}">${statusLabel}</span>
       </div>
       <div class="paket-meta">⏱ ${p.durasi} menit &nbsp;|&nbsp; 📝 ${p.soal.length} soal &nbsp;|&nbsp; 👥 ${results.length} peserta</div>
-      <div class="paket-meta">📅 ${p.mulai ? fmtDate(p.mulai) : '-'} → ${p.selesai ? fmtDate(p.selesai) : '-'}</div>
+      <div class="paket-meta">📅 ${p.mulai ? fmtWaktu(p.mulai) : '-'} → ${p.selesai ? fmtWaktu(p.selesai) : '-'}</div>
       ${p.published ? `<div class="paket-code">🔑 ${p.kode}</div>` : ''}
       <div class="paket-actions">
         <button class="btn btn-outline btn-sm" onclick="editPaket('${p.id}')">✏ Edit</button>
@@ -861,8 +877,8 @@ function editPaket(id) {
   editingPaketId = id;
   document.getElementById('paket-nama').value = p.nama;
   document.getElementById('paket-durasi').value = p.durasi;
-  document.getElementById('paket-mulai').value = utcToWibLocal(p.mulai);
-  document.getElementById('paket-selesai').value = utcToWibLocal(p.selesai);
+  document.getElementById('paket-mulai').value = p.mulai ? p.mulai.slice(0,16) : '';
+  document.getElementById('paket-selesai').value = p.selesai ? p.selesai.slice(0,16) : '';
   initQuestionEditor(p.soal);
   switchGuruTab('buat');
 }
@@ -1169,11 +1185,11 @@ function renderMuridDashboard() {
   else {
     availDiv.innerHTML = pakets.map(p=>{
       const done = results.find(r=>r.paketId===p.id);
-      const start = new Date(p.mulai).getTime();
-      const end = new Date(p.selesai).getTime();
+      const start = parseWaktu(p.mulai);
+      const end = parseWaktu(p.selesai);
       const available = now >= start && now <= end;
       const upcoming = now < start;
-      const statusText = done ? `✅ Selesai (${done.nilai})` : available ? '▶ Tersedia' : upcoming ? `🔒 Mulai ${fmtDate(p.mulai)}` : '⌛ Berakhir';
+      const statusText = done ? `✅ Selesai (${done.nilai})` : available ? '▶ Tersedia' : upcoming ? `🔒 Mulai ${fmtWaktu(p.mulai)}` : '⌛ Berakhir';
       const canStart = available && !done;
       return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 14px;background:${canStart?'#f0fdf4':'#f8fafc'};border-radius:8px;border:1.5px solid ${canStart?'#86efac':'var(--border)'};">
         <div>
@@ -1284,9 +1300,9 @@ async function startUjianFromTab() {
   if(!paket) { document.getElementById('ujian-alert').innerHTML='<div class="alert alert-danger">Kode tidak ditemukan</div>'; return; }
   if(!paket.published) { document.getElementById('ujian-alert').innerHTML='<div class="alert alert-warn">Paket belum dipublish</div>'; return; }
   const now = Date.now();
-  const start = new Date(paket.mulai).getTime();
-  const end = new Date(paket.selesai).getTime();
-  if(now < start) { document.getElementById('ujian-alert').innerHTML=`<div class="alert alert-warn">Ujian belum bisa diakses. Mulai: ${fmtDate(paket.mulai)}</div>`; return; }
+  const start = parseWaktu(paket.mulai);
+  const end = parseWaktu(paket.selesai);
+  if(now < start) { document.getElementById('ujian-alert').innerHTML=`<div class="alert alert-warn">Ujian belum bisa diakses. Mulai: ${fmtWaktu(paket.mulai)}</div>`; return; }
   if(now > end) { document.getElementById('ujian-alert').innerHTML='<div class="alert alert-danger">Ujian sudah berakhir</div>'; return; }
   const done = DB.getArr('results').find(r=>r.paketId===paket.id && r.nama===currentUser.nama);
   if(done) { document.getElementById('ujian-alert').innerHTML='<div class="alert alert-warn">Anda sudah mengerjakan ujian ini</div>'; return; }
@@ -1318,9 +1334,9 @@ async function doMasukUjian() {
   if(!paket.published) { alertEl.innerHTML = '<div class="alert alert-warn">Paket belum dipublish</div>'; return; }
 
   const now = Date.now();
-  const start = new Date(paket.mulai).getTime();
-  const end = new Date(paket.selesai).getTime();
-  if(now < start) { alertEl.innerHTML = `<div class="alert alert-warn">Ujian belum bisa diakses. Mulai: ${fmtDate(paket.mulai)}</div>`; return; }
+  const start = parseWaktu(paket.mulai);
+  const end = parseWaktu(paket.selesai);
+  if(now < start) { alertEl.innerHTML = `<div class="alert alert-warn">Ujian belum bisa diakses. Mulai: ${fmtWaktu(paket.mulai)}</div>`; return; }
   if(now > end) { alertEl.innerHTML = '<div class="alert alert-danger">Ujian sudah berakhir</div>'; return; }
 
   const done = DB.getArr('results').find(r=>r.paketId===paket.id && r.nama===currentUser.nama);
@@ -1602,12 +1618,16 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   }
   // Set default datetime
   const now = new Date();
-  // Gunakan utcToWibLocal agar default input sudah dalam WIB
+  // Default input waktu: pakai waktu lokal browser
   const later = new Date(now.getTime()+60*60000);
+  const toLocalInput = d => {
+    const pad = n => String(n).padStart(2,'0');
+    return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());
+  };
   const el1 = document.getElementById('paket-mulai');
   const el2 = document.getElementById('paket-selesai');
-  if(el1) el1.value = utcToWibLocal(now.toISOString());
-  if(el2) el2.value = utcToWibLocal(later.toISOString());
+  if(el1) el1.value = toLocalInput(now);
+  if(el2) el2.value = toLocalInput(later);
   initQuestionEditor([]);
 });
 </script>
