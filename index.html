@@ -556,15 +556,17 @@ const DB = {
     if (e1) { console.error('refreshPakets:', e1); return; }
     const { data: soalRows, error: e2 } = await sb.from('pertanyaan').select('*').order('urutan', { ascending: true });
     if (e2) { console.error('refreshPakets soal:', e2); }
-    // utcStrToWib: konversi string UTC dari Supabase ke "YYYY-MM-DDTHH:mm" WIB
-    // Supabase timestamptz selalu kirim UTC, kita tambah 7 jam untuk WIB
+    // utcStrToWib: konversi UTC dari Supabase ke string WIB "YYYY-MM-DDTHH:mm"
+    // Supabase selalu kirim UTC (misal "2024-01-15T09:00:00+00:00")
+    // Kita tambah 7 jam (WIB = UTC+7) menggunakan getUTC* agar tidak bergantung timezone browser/server
     const utcStrToWib = s => {
       if (!s) return null;
-      const d = new Date(s); // ini UTC-aware karena ada offset di string Supabase
-      // Tambah 7 jam (WIB = UTC+7)
-      const wib = new Date(d.getTime() + 7 * 60 * 60 * 1000);
+      const ms = Date.parse(s); // parse ke milliseconds UTC, tidak bergantung timezone lokal
+      if (isNaN(ms)) return null;
+      const wibMs = ms + 7 * 60 * 60 * 1000;
+      const d = new Date(wibMs);
       const pad = n => String(n).padStart(2,'0');
-      return wib.getUTCFullYear()+'-'+pad(wib.getUTCMonth()+1)+'-'+pad(wib.getUTCDate())+'T'+pad(wib.getUTCHours())+':'+pad(wib.getUTCMinutes());
+      return d.getUTCFullYear()+'-'+pad(d.getUTCMonth()+1)+'-'+pad(d.getUTCDate())+'T'+pad(d.getUTCHours())+':'+pad(d.getUTCMinutes());
     };
     this.cache.pakets = (pakets || []).map(p => ({
       id: p.id,
