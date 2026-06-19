@@ -691,7 +691,7 @@ const GURU_CODE = 'GURU140404';
 // UTILS
 // ============================================================
 function uuid() { return 'pk_' + Math.random().toString(36).substr(2,9) + Date.now(); }
-function fmtDate(d) { return new Date(d).toLocaleString('id-ID',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}); }
+function fmtDate(d) { return new Date(d).toLocaleString('id-ID',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Jakarta'}); }
 function fmtTime(s) { const m=Math.floor(s/60).toString().padStart(2,'0'),sc=(s%60).toString().padStart(2,'0'); return m+':'+sc; }
 
 // ============================================================
@@ -713,6 +713,7 @@ async function doGuruLogin() {
   if(code === GURU_CODE) {
     closeModals();
     currentRole = 'guru';
+    sessionStorage.setItem('cbt_session', JSON.stringify({ role: 'guru' }));
     await showGuruPanel();
   } else {
     document.getElementById('guru-login-alert').innerHTML = '<div class="alert alert-danger">⚠ Kode salah!</div>';
@@ -730,6 +731,7 @@ async function doMuridLogin() {
   if(!user) { document.getElementById('murid-login-alert').innerHTML='<div class="alert alert-danger">Nama atau password salah, atau akun belum terdaftar</div>'; return; }
   currentUser = user;
   currentRole = 'murid';
+  sessionStorage.setItem('cbt_session', JSON.stringify({ role: 'murid', userId: user.id, nama: user.nama, pass: user.pass }));
   closeModals();
   await showMuridPanel();
 }
@@ -757,6 +759,7 @@ async function doRegister() {
 
 function logout() {
   currentUser = null; currentRole = null; activePaketId = null;
+  sessionStorage.removeItem('cbt_session');
   stopExamTimer();
   ['guru-panel','murid-panel','exam-view','hasil-view'].forEach(id=>document.getElementById(id).classList.add('hidden'));
   document.getElementById('landing').classList.remove('hidden');
@@ -1573,7 +1576,30 @@ function generatePDF(result) {
 // ============================================================
 // INIT
 // ============================================================
-document.addEventListener('DOMContentLoaded', ()=>{
+document.addEventListener('DOMContentLoaded', async ()=>{
+  // Restore session on reload
+  const savedSession = sessionStorage.getItem('cbt_session');
+  if (savedSession) {
+    try {
+      const sess = JSON.parse(savedSession);
+      if (sess.role === 'guru') {
+        currentRole = 'guru';
+        await showGuruPanel();
+      } else if (sess.role === 'murid') {
+        await DB.refreshUsers();
+        const user = DB.getArr('users').find(u => u.id === sess.userId);
+        if (user) {
+          currentUser = user;
+          currentRole = 'murid';
+          await showMuridPanel();
+        } else {
+          sessionStorage.removeItem('cbt_session');
+        }
+      }
+    } catch(e) {
+      sessionStorage.removeItem('cbt_session');
+    }
+  }
   // Set default datetime
   const now = new Date();
   const fmt = d => d.toISOString().slice(0,16);
